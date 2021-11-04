@@ -30,7 +30,7 @@ async function deploy() {
   tx = await token.approve(contract.address, ethers.constants.MaxUint256);
   await tx.wait();
 
-  tx = await contract.createAgreement(
+  tx = await contract.createTask(
     '0',
     promoter.address,
     token.address,
@@ -47,7 +47,7 @@ async function deploy() {
 
   tx = await contract
     .connect(promoter)
-    .createAgreement(
+    .createTask(
       0,
       owner.address,
       token2.address,

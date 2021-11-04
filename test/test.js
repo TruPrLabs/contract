@@ -79,8 +79,8 @@ describe('Escrow Platform', function () {
     // console.log('address', token.address);
   });
 
-  it('Should be able to create agreements', async function () {
-    let tx = await contract.createAgreement(
+  it('Should be able to create tasks', async function () {
+    let tx = await contract.createTask(
       0,
       promoter.address,
       token.address,
@@ -91,24 +91,24 @@ describe('Escrow Platform', function () {
       ethers.constants.HashZero
     );
 
-    // let filt = contract.filters.AgreementCreated(null, signer1.address, null);
+    // let filt = contract.filters.TaskCreated(null, signer1.address, null);
     // contract.on(filt, console.log);
 
     let receipt = await tx.wait();
     let log = receipt.events.at(-1);
 
-    expect(log.event).to.equal('AgreementCreated');
+    expect(log.event).to.equal('TaskCreated');
 
-    let { agreementId } = log.args;
+    let { taskId } = log.args;
 
-    let agreement = await contract.getAgreement(agreementId);
+    let task = await contract.getTask(taskId);
 
-    expect(agreementId).to.equal(BN('0'));
+    expect(taskId).to.equal(BN('0'));
 
-    expect(agreement.sponsor).to.equal(sponsor.address);
-    expect(agreement.promoter).to.equal(promoter.address);
-    expect(agreement.erc20Token).to.equal(token.address);
-    expect(agreement.depositAmount).to.equal(100);
+    expect(task.sponsor).to.equal(sponsor.address);
+    expect(task.promoter).to.equal(promoter.address);
+    expect(task.erc20Token).to.equal(token.address);
+    expect(task.depositAmount).to.equal(100);
     // ...
 
     let sponsorFunds = await contract.outstandingPayment(0, sponsor.address);
