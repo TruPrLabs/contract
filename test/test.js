@@ -33,7 +33,7 @@ describe('Escrow Platform', function () {
     contract = contract.connect(sponsor);
 
     token = token.connect(sponsor);
-    token.mint(sponsor.address, 1000);
+    token.mintFor(sponsor.address, 1000);
     token.approve(contract.address, ethers.constants.MaxUint256);
   });
 
@@ -84,10 +84,6 @@ describe('Escrow Platform', function () {
     ).to.be.revertedWith('timeWindowEnd is before timeWindowStart');
 
     await expect(
-      contract.createTask(0, promoter.address, 6789, token.address, 100, now, future1m, 0, ethers.constants.HashZero)
-    ).to.be.revertedWith('persistenceDuration must be greater 0');
-
-    await expect(
       contract.createTask(
         0,
         promoter.address,
@@ -130,5 +126,10 @@ describe('Escrow Platform', function () {
     );
 
     await tx.wait();
+
+    tx = await contract.connect(promoter).fulfillTask('0');
+    console.log(tx);
+    let receipt = await tx.wait();
+    console.log(receipt);
   });
 });

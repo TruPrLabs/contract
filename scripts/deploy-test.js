@@ -18,9 +18,9 @@ async function deploy() {
   console.log('Erc20Mock contract2 deployed to:', token2.address);
 
   let tx;
-  tx = await token.mint(owner.address, '1000');
+  tx = await token.mintFor(owner.address, '1000');
   await tx.wait();
-  tx = await token2.mint(promoter.address, '1000');
+  tx = await token2.mintFor(promoter.address, '1000');
   await tx.wait();
 
   // Treasury

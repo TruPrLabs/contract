@@ -1,9 +1,9 @@
-const now = new Date().getTime();
+const now = parseInt(new Date().getTime() / 1000);
 
-const delta1s = 1 * 1000;
-const delta1m = 1 * 1000 * 60;
-const delta1h = 1 * 1000 * 60 * 60;
-const delta1d = 24 * 1000 * 60 * 60;
+const delta1s = 1;
+const delta1m = 1 * 60;
+const delta1h = 1 * 60 * 60;
+const delta1d = 24 * 60 * 60;
 
 const delta10s = 10 * delta1s;
 const delta10m = 10 * delta1m;

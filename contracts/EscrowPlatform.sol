@@ -1,14 +1,14 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "hardhat/console.sol";
+import 'hardhat/console.sol';
 
-import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import '@chainlink/contracts/src/v0.8/ChainlinkClient.sol';
+import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
+import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
-import "./IEscrow.sol";
-import "./APIConsumer.sol";
+import './IEscrow.sol';
+import './APIConsumer.sol';
 
 // ==================================
 // ====== Escrow Base Contract ======
@@ -20,7 +20,7 @@ contract Escrow is IEscrow {
     address public owner;
     address public treasury;
 
-    address[] private tokenWhitelist;
+    mapping(address => bool) private tokenWhitelist;
     uint256 public baseFee = 50; // per mille; fee given to platform
     uint256 public taskCount = 0; // XXX: Why did Sablier start at 10 000? https://github.com/sablierhq/sablier/blob/develop/packages/protocol/contracts/Sablier.sol
 
@@ -28,8 +28,10 @@ contract Escrow is IEscrow {
 
     constructor(address[] memory _tokenWhitelist, address _treasury) {
         owner = msg.sender;
-        tokenWhitelist = _tokenWhitelist;
         treasury = _treasury;
+        for (uint256 i = 0; i < _tokenWhitelist.length; i++) {
+            tokenWhitelist[_tokenWhitelist[i]] = true;
+        }
     }
 
     // ====================== Getters ========================
@@ -43,7 +45,7 @@ contract Escrow is IEscrow {
     }
 
     function getAllTasks() public view returns (Task[] memory _tasks) {
-        // Task[] memory _tasks = new Task[](taskCount);
+        _tasks = new Task[](taskCount);
         for (uint256 i = 0; i < taskCount; i++) {
             _tasks[i] = tasks[i];
         }
@@ -64,21 +66,14 @@ contract Escrow is IEscrow {
     ) external payable {
         require(
             block.timestamp < timeWindowEnd && timeWindowStart < timeWindowEnd,
-            "timeWindowEnd is before timeWindowStart"
+            'timeWindowEnd is before timeWindowStart'
         );
-        require(
-            persistenceDuration > 0,
-            "persistenceDuration must be greater 0"
-        );
-        require(depositAmount > 0, "depositAmount cannot be 0");
-        require(promoter != msg.sender, "promoter cannot be sender");
+        require(tokenWhitelist[erc20Token], 'token is not whitelisted');
+        require(depositAmount > 0, 'depositAmount cannot be 0');
+        require(promoter != msg.sender, 'promoter cannot be sender');
 
-        bool success = IERC20(erc20Token).transferFrom(
-            msg.sender,
-            address(this),
-            depositAmount
-        );
-        require(success, "ERC20 Token could not be transferred");
+        bool success = IERC20(erc20Token).transferFrom(msg.sender, address(this), depositAmount);
+        require(success, 'ERC20 Token could not be transferred');
 
         tasks[taskCount] = Task({
             status: Status.OPEN,
@@ -98,6 +93,12 @@ contract Escrow is IEscrow {
 
         taskCount++;
     }
+
+    // ====================== Misc ========================
+
+    function setWhitelistToken(address token, bool allowed) external {
+        tokenWhitelist[token] = allowed;
+    }
 }
 
 // ==================================
@@ -116,11 +117,11 @@ contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
     function fulfillTask(uint256 taskId) external {
         Task storage task = tasks[taskId];
 
-        require(task.status == Status.OPEN, "task is not open");
+        require(msg.sender == task.promoter, 'caller is not the promoter');
+        require(task.status == Status.OPEN, 'task is not open');
         require(
-            task.timeWindowStart <= block.timestamp &&
-                block.timestamp < task.timeWindowEnd,
-            "not in valid time window"
+            task.timeWindowStart <= block.timestamp && block.timestamp < task.timeWindowEnd,
+            'not in valid time window'
         );
 
         bytes memory data = abi.encode(taskId, task);
@@ -130,11 +131,11 @@ contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
     function revokeTask(uint256 taskId) external {
         Task storage task = tasks[taskId];
 
-        require(task.status == Status.OPEN, "task is not open");
+        require(msg.sender == task.sponsor, 'caller is not the sponsor');
+        require(task.status == Status.OPEN, 'task is not open');
         require(
-            block.timestamp < task.timeWindowStart ||
-                task.timeWindowEnd < block.timestamp,
-            "must be before or after valid time window"
+            block.timestamp < task.timeWindowStart || task.timeWindowEnd < block.timestamp,
+            'must be before or after valid time window'
         );
 
         bytes memory data = abi.encode(taskId, task);
@@ -150,7 +151,7 @@ contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
     ) external recordChainlinkFulfillment(requestId) {
         Task storage task = tasks[taskId];
 
-        require(task.status == Status.OPEN, "task is not open"); // XXX: is it ok to let chainlink calls fail?
+        require(task.status == Status.OPEN, 'task is not open'); // XXX: is it ok to let chainlink calls fail?
 
         if (success) {
             task.status = Status.FULFILLED;
@@ -158,20 +159,11 @@ contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
             uint256 platformFee = (task.depositAmount * baseFee) / 1000;
             uint256 promoterReward = task.depositAmount - platformFee;
 
-            bool transferSuccessful = IERC20(task.erc20Token).transfer(
-                task.promoter,
-                promoterReward
-            );
-            require(transferSuccessful, "ERC20 Token could not be transferred");
+            bool transferSuccessful = IERC20(task.erc20Token).transfer(task.promoter, promoterReward);
+            require(transferSuccessful, 'ERC20 Token could not be transferred');
 
-            transferSuccessful = IERC20(task.erc20Token).transfer(
-                treasury,
-                platformFee
-            );
-            require(
-                transferSuccessful,
-                "ERC20 Token could not be transferred to treasury"
-            );
+            transferSuccessful = IERC20(task.erc20Token).transfer(treasury, platformFee);
+            require(transferSuccessful, 'ERC20 Token could not be transferred to treasury');
         }
     }
 
@@ -182,16 +174,13 @@ contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
     ) external recordChainlinkFulfillment(requestId) {
         Task storage task = tasks[taskId];
 
-        require(task.status == Status.OPEN, "task is not open");
+        require(task.status == Status.OPEN, 'task is not open');
 
         if (success) {
             task.status = Status.CLOSED;
 
-            bool transferSuccessful = IERC20(task.erc20Token).transfer(
-                task.sponsor,
-                task.depositAmount
-            );
-            require(transferSuccessful, "ERC20 Token could not be transferred");
+            bool transferSuccessful = IERC20(task.erc20Token).transfer(task.sponsor, task.depositAmount);
+            require(transferSuccessful, 'ERC20 Token could not be transferred');
         }
     }
 }
