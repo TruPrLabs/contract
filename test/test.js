@@ -1,12 +1,25 @@
 const { expect } = require('chai');
-const { ethers } = require('hardhat');
-const { BigNumber } = require('ethers');
+const { ethers, network } = require('hardhat');
+const { BigNumber, utils } = require('ethers');
 
-const { now, future10s, future1m, future1h, delta1m } = require('../scripts/time.js');
+const { centerTime } = require('../scripts/time.js');
 
 const BN = BigNumber.from;
 
-describe('Escrow Platform', function () {
+var time = centerTime();
+
+const jumpToTime = async (t) => {
+  await network.provider.send('evm_mine', [t]);
+  time = centerTime(t);
+};
+
+const getLatestBlockTimestamp = async () => {
+  let blocknum = await network.provider.request({ method: 'eth_blockNumber' });
+  let block = await network.provider.request({ method: 'eth_getBlockByNumber', params: [blocknum, true] });
+  return BN(block.timestamp).toString();
+};
+
+describe('Escrow Platform', () => {
   let EscrowPlatform;
   let contract;
   let token;
@@ -17,7 +30,13 @@ describe('Escrow Platform', function () {
 
   let signers;
 
-  beforeEach(async function () {
+  let tx;
+  let receipt;
+  let log;
+
+  let taskId;
+
+  beforeEach(async () => {
     EscrowPlatform = await ethers.getContractFactory('PrivateEscrow');
     Erc20MockToken = await ethers.getContractFactory('ERC20Mock');
 
@@ -37,25 +56,25 @@ describe('Escrow Platform', function () {
     token.approve(contract.address, ethers.constants.MaxUint256);
   });
 
-  it('Create tasks correctly', async function () {
-    let tx = await contract.createTask(
+  it('Create tasks correctly', async () => {
+    tx = await contract.createTask(
       0,
       promoter.address,
       6789,
       token.address,
       100,
-      now,
-      future1m,
-      delta1m,
+      time.now,
+      time.future1m,
+      0,
       ethers.constants.HashZero
     );
 
-    let receipt = await tx.wait();
-    let log = receipt.events.at(-1);
+    receipt = await tx.wait();
+    log = receipt.events.at(-1);
 
     expect(log.event).to.equal('TaskCreated');
 
-    let { taskId } = log.args;
+    taskId = log.args.taskId;
 
     let task = await contract.getTask(taskId);
 
@@ -68,7 +87,7 @@ describe('Escrow Platform', function () {
     expect(task.depositAmount).to.equal(100);
   });
 
-  it('Task creation conditions', async function () {
+  it('Task creation conditions', async () => {
     await expect(
       contract.createTask(
         0,
@@ -76,9 +95,9 @@ describe('Escrow Platform', function () {
         6789,
         token.address,
         100,
-        future1m,
-        now,
-        delta1m,
+        time.future1m,
+        time.now,
+        0,
         ethers.constants.HashZero
       )
     ).to.be.revertedWith('timeWindowEnd is before timeWindowStart');
@@ -90,9 +109,9 @@ describe('Escrow Platform', function () {
         6789,
         token.address,
         0,
-        now,
-        future1m,
-        delta1m,
+        time.now,
+        time.future1m,
+        0,
         ethers.constants.HashZero
       )
     ).to.be.revertedWith('depositAmount cannot be 0');
@@ -104,32 +123,89 @@ describe('Escrow Platform', function () {
         6789,
         token.address,
         100,
-        now,
-        future1m,
-        delta1m,
+        time.now,
+        time.future1m,
+        0,
         ethers.constants.HashZero
       )
     ).to.be.revertedWith('promoter cannot be sender');
   });
 
-  it('Allow promoter to fulfill', async function () {
-    let tx = await contract.createTask(
-      0,
-      promoter.address,
-      6789,
-      token.address,
-      100,
-      now,
-      future1m,
-      delta1m,
-      ethers.constants.HashZero
-    );
+  describe('Fulfill task logic', async () => {
+    beforeEach(async () => {
+      tx = await contract.createTask(
+        0,
+        promoter.address,
+        6789,
+        token.address,
+        100,
+        time.future1m,
+        time.future10m,
+        0,
+        ethers.constants.HashZero
+      );
+      receipt = await tx.wait();
+      taskId = receipt.events.at(-1).args.taskId;
+    });
 
-    await tx.wait();
+    it("promoter can't fulfill outside of time window", async () => {
+      // too early
+      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('not in valid time window');
 
-    tx = await contract.connect(promoter).fulfillTask('0');
-    console.log(tx);
-    let receipt = await tx.wait();
-    console.log(receipt);
+      // advance to after time window
+      jumpToTime(time.future1h);
+
+      // too late
+      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('not in valid time window');
+    });
+
+    it('only promoter is able to fulfill only once', async () => {
+      // advance into time window
+      jumpToTime(time.future1m);
+
+      // only promoter can fulfill task
+      await expect(contract.connect(sponsor).fulfillTask(taskId)).to.be.revertedWith('caller is not the promoter');
+      await expect(contract.connect(signers[0]).fulfillTask(taskId)).to.be.revertedWith('caller is not the promoter');
+
+      // promoter is able to fulfill
+      tx = await contract.connect(promoter).fulfillTask(taskId);
+      await tx.wait();
+
+      // can't fulfill again
+      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('task is not open');
+    });
+
+    it('only sponsor can revoke task before expiration only once', async () => {
+      // only sponsor can revoke
+      await expect(contract.connect(promoter).revokeTask(taskId)).to.be.revertedWith('caller is not the sponsor');
+
+      // sponsor can revoke (before start)
+      await contract.revokeTask(taskId);
+      // XXX: count balances
+
+      // sponsor can't revoke twice
+      await expect(contract.revokeTask(taskId)).to.be.revertedWith('task is not open');
+    });
+
+    it('sponsor can revoke task after expiration, promoter cannot fulfill revoked task', async () => {
+      // advance into to after time window
+      jumpToTime(time.future1h);
+
+      // sponsor can revoke (after end)
+      await contract.revokeTask(taskId);
+
+      // promoter can't fulfill revoked task
+      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('task is not open');
+    });
+
+    it('promoter cannot fulfill revoked task', async () => {
+      // advance into to after time window
+      jumpToTime(time.future1h);
+
+      await contract.revokeTask(taskId);
+
+      // can't fulfill after task is revoked
+      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('task is not open');
+    });
   });
 });
