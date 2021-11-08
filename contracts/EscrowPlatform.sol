@@ -125,7 +125,7 @@ contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
         );
 
         bytes memory data = abi.encode(taskId, task);
-        verifyTimelineData(data, this.fulfilTaskCallback.selector);
+        verifyTimelineData(data, this.fulfillTaskCallback.selector);
     }
 
     function revokeTask(uint256 taskId) external {
@@ -144,7 +144,7 @@ contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
 
     // ================== Chainlink Callbacks ====================
 
-    function fulfilTaskCallback(
+    function fulfillTaskCallback(
         bytes32 requestId,
         uint256 taskId,
         bool success

@@ -1,41 +1,42 @@
 const hre = require('hardhat');
 
-const { now, delta10h, delta10d, future10m, future10h, future50h } = require('./time');
+const { centerTime } = require('../scripts/time.js');
+var time = centerTime();
 
 async function deploy() {
   [owner, promoter, ...signers] = await ethers.getSigners();
 
   // Token
   const Erc20MockToken = await ethers.getContractFactory('ERC20Mock');
-  const token = await Erc20MockToken.deploy('MockToken', 'MOCK');
-  await token.deployed();
-  console.log('deployed token 1');
+  const token1 = await Erc20MockToken.deploy('MockToken', 'MOCK');
+  await token1.deployed();
 
   const token2 = await Erc20MockToken.deploy('BananaToken', 'BANA');
   await token2.deployed();
 
-  console.log('Erc20Mock contract1 deployed to:', token.address);
+  console.log('Erc20Mock contract1 deployed to:', token1.address);
   console.log('Erc20Mock contract2 deployed to:', token2.address);
 
   let tx;
-  tx = await token.mintFor(owner.address, '1000');
+  tx = await token1.mintFor(owner.address, '1000');
   await tx.wait();
   tx = await token2.mintFor(promoter.address, '1000');
   await tx.wait();
 
-  // Treasury
-  const TreasuryFactory = await ethers.getContractFactory('Treasury');
-  const treasury = await TreasuryFactory.deploy();
-  await treasury.deployed();
+  // // Treasury
+  // const TreasuryFactory = await ethers.getContractFactory('Treasury');
+  // const treasury = await TreasuryFactory.deploy();
+  // await treasury.deployed();
 
-  console.log('Treasury deployed to:', treasury.address);
+  // console.log('Treasury deployed to:', treasury.address);
 
   // Escrow Platform
   const EscrowPlatform = await ethers.getContractFactory('PrivateEscrow');
   const contract = await EscrowPlatform.deploy(
-    '0x000000000000000000000000000000000000dEaD', //oracle
-    [token.address, token2.address],
-    treasury.address
+    '0xa07463D2C0bDb92Ec9C49d6ffAb59b864A48A660', // oracle
+    [token1.address, token2.address],
+    '0x000000000000000000000000000000000000dEaD' // treasury
+    // treasury.address
   );
   await contract.deployed();
 
@@ -43,18 +44,18 @@ async function deploy() {
 
   console.log('Creating test tasks');
 
-  tx = await token.approve(contract.address, ethers.constants.MaxUint256);
+  tx = await token1.approve(contract.address, ethers.constants.MaxUint256);
   await tx.wait();
 
   tx = await contract.createTask(
     '0',
     promoter.address,
-    '28405',
-    token.address,
+    '1234',
+    token1.address,
     '100',
-    future10m,
-    future50h,
-    delta10h,
+    time.future10m,
+    time.future50h,
+    time.delta10h,
     '0x68656c6c6f000000000000000000000000000000000000000000000000000000'
   );
   await tx.wait();
@@ -70,13 +71,18 @@ async function deploy() {
       '28405',
       token2.address,
       500,
-      future10h,
-      future50h,
-      delta10d,
-      '0x68656c6c6f000000000000000000000000000000000000000000000000000000'
+      time.future10h,
+      time.future50h,
+      time.delta10d,
+      '0x1234566c6f000000000000000000000000000000000000000000000000000000'
     );
 
   await tx.wait();
+
+  console.log();
+  console.log(`const contractAddressKovan = '${contract.address}';`);
+  console.log(`const mockToken1Kovan = '${token1.address}';`);
+  console.log(`const mockToken2Kovan = '${token2.address}';`);
 }
 
 deploy()
