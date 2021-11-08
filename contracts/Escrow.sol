@@ -120,8 +120,7 @@ contract Escrow is IEscrow, ChainlinkConsumer, Ownable {
     }
 
     function withdrawToken(address token) external onlyOwner {
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        bool transferSuccessful = IERC20(token).transfer(owner(), balance);
+        bool transferSuccessful = IERC20(token).transfer(owner(), balances[token]);
         require(transferSuccessful, 'ERC20 Token could not be transferred');
     }
 
