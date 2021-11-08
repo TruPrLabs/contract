@@ -4,10 +4,12 @@ pragma solidity ^0.8.0;
 import 'hardhat/console.sol';
 
 import '@chainlink/contracts/src/v0.8/ChainlinkClient.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import '@openzeppelin/contracts/access/Ownable.sol';
 
 import './IEscrow.sol';
+
+// Note: Switch when testing
 // import './APIConsumer.sol';
 import './test/MockConsumer.sol';
 
@@ -15,21 +17,17 @@ import './test/MockConsumer.sol';
 // ====== Escrow Base Contract ======
 // ==================================
 
-contract Escrow is IEscrow {
+contract Escrow is IEscrow, ChainlinkConsumer, Ownable {
     // ====================== Storage ========================
 
-    address public owner;
-    address public treasury;
-
-    mapping(address => bool) private tokenWhitelist;
-    uint256 public baseFee = 50; // per mille; fee given to platform
+    uint256 public baseFeePerMille = 50; // per mille; fee given to platform
     uint256 public taskCount = 0; // XXX: Why did Sablier start at 10 000? https://github.com/sablierhq/sablier/blob/develop/packages/protocol/contracts/Sablier.sol
 
     mapping(uint256 => Task) internal tasks;
+    mapping(address => bool) private tokenWhitelist;
+    mapping(address => uint256) balances;
 
-    constructor(address[] memory _tokenWhitelist, address _treasury) {
-        owner = msg.sender;
-        treasury = _treasury;
+    constructor(address oracle, address[] memory _tokenWhitelist) ChainlinkConsumer(oracle) {
         for (uint256 i = 0; i < _tokenWhitelist.length; i++) {
             tokenWhitelist[_tokenWhitelist[i]] = true;
         }
@@ -95,23 +93,50 @@ contract Escrow is IEscrow {
         taskCount++;
     }
 
+    // NOTE: maybe better to keep inline in fulfill
+    function payoutTo(
+        address promoter,
+        address token,
+        uint256 amount
+    ) internal {
+        uint256 platformFee = (amount * baseFeePerMille) / 1000;
+        uint256 reward = amount - platformFee;
+
+        balances[token] += platformFee;
+
+        bool transferSuccessful = IERC20(token).transfer(promoter, reward);
+        require(transferSuccessful, 'ERC20 Token could not be transferred');
+    }
+
     // ====================== Misc ========================
 
-    function setWhitelistToken(address token, bool allowed) external {
+    function setFee(uint256 feePerMille) external onlyOwner {
+        require(feePerMille <= 50, 'fee cannot be larger than 5%');
+        baseFeePerMille = feePerMille;
+    }
+
+    function setWhitelistToken(address token, bool allowed) external onlyOwner {
         tokenWhitelist[token] = allowed;
+    }
+
+    function withdrawToken(address token) external onlyOwner {
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        bool transferSuccessful = IERC20(token).transfer(owner(), balance);
+        require(transferSuccessful, 'ERC20 Token could not be transferred');
+    }
+
+    function withdraw() external onlyOwner {
+        (bool success, bytes memory returndata) = owner().call{value: address(this).balance}('');
+        require(success, 'balance could not be transferred');
     }
 }
 
 // ==================================
-// ===== PersonalisedEscrow Contract =====
+// === PersonalisedEscrow Contract ==
 // ==================================
 
-contract PersonalisedEscrow is Escrow, ChainlinkConsumer {
-    constructor(
-        address oracle,
-        address[] memory tokenWhitelist,
-        address treasury
-    ) Escrow(tokenWhitelist, treasury) ChainlinkConsumer(oracle) {}
+contract PersonalisedEscrow is Escrow {
+    constructor(address oracle, address[] memory tokenWhitelist) Escrow(oracle, tokenWhitelist) {}
 
     // ====================== User API ========================
 
@@ -157,14 +182,7 @@ contract PersonalisedEscrow is Escrow, ChainlinkConsumer {
         if (success) {
             task.status = Status.FULFILLED;
 
-            uint256 platformFee = (task.depositAmount * baseFee) / 1000;
-            uint256 promoterReward = task.depositAmount - platformFee;
-
-            bool transferSuccessful = IERC20(task.erc20Token).transfer(task.promoter, promoterReward);
-            require(transferSuccessful, 'ERC20 Token could not be transferred');
-
-            transferSuccessful = IERC20(task.erc20Token).transfer(treasury, platformFee);
-            require(transferSuccessful, 'ERC20 Token could not be transferred to treasury');
+            payoutTo(task.promoter, task.erc20Token, task.depositAmount);
         }
     }
 

@@ -13,7 +13,7 @@ contract ChainlinkConsumer is ChainlinkClient {
 
     using Chainlink for Chainlink.Request;
 
-    address private oracle; // = 0x521E899DD6c47ea8DcA360Fc46cA41e5A904d28b;
+    address private oracle;
     address private linkToken = 0xa36085F69e2889c224210F603D836748e7dC0088;
 
     bytes32 private jobIdTimeline = bytes32('e5ce0aaf603d4aa2be36b62bb296ce96');
@@ -43,7 +43,7 @@ contract ChainlinkConsumer is ChainlinkClient {
         return sendChainlinkRequestTo(oracle, request, fee);
     }
 
-    function withdrawLink() internal {
+    function withdrawLink() external {
         require(msg.sender == owner);
         uint256 balance = IERC20(linkToken).balanceOf(address(this));
         IERC20(linkToken).transfer(msg.sender, balance);

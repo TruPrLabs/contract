@@ -41,9 +41,9 @@ contract ChainlinkConsumer {
 contract TestChainlinkConsumer is ChainlinkClient {
     using Chainlink for Chainlink.Request;
 
-    address private oracle = 0xa07463D2C0bDb92Ec9C49d6ffAb59b864A48A660;
+    address private oracle = 0xDe2Fa809f8E0c702983C846Becd044c24B86C3EE;
 
-    bytes32 private jobIdTimeline = bytes32('6d744257a4a345608c246526003004b5');
+    bytes32 private jobIdTest = bytes32('ec7d958e15a44c48adcf1d927f0069cb');
 
     bool public lastsuccess;
 
@@ -54,7 +54,7 @@ contract TestChainlinkConsumer is ChainlinkClient {
         // address b = 0x000000000000000000000000000000000000dead;
         // bytes memory data = abi.encode(a, b);
 
-        Chainlink.Request memory request = buildChainlinkRequest(jobIdTimeline, address(this), this.fulfill.selector);
+        Chainlink.Request memory request = buildChainlinkRequest(jobIdTest, address(this), this.fulfill.selector);
         // request.addBytes('data', data);
         request.addUint('taskId', 666);
         request.addUint('promoterId', 1234);

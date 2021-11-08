@@ -46,8 +46,8 @@ describe('Escrow Platform', () => {
 
     contract = await EscrowPlatform.deploy(
       '0x000000000000000000000000000000000000dEaD', //oracle
-      [token.address], // whitelist
-      '0x000000000000000000000000000000000000dEaD' //treasury
+      [token.address] // whitelist
+      // '0x000000000000000000000000000000000000dEaD' //treasury
     );
     contract = contract.connect(sponsor);
 
