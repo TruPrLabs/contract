@@ -11,7 +11,49 @@ import './IEscrow.sol';
 
 // Note: Switch when testing
 // import './APIConsumer.sol';
-import './test/MockConsumer.sol';
+import {MockChainlinkConsumer as ChainlinkConsumer} from './test/MockConsumer.sol';
+
+enum Platform {
+    TWITTER,
+    REDDIT,
+    INSTAGRAM,
+    DISCORD
+}
+
+enum Status {
+    CLOSED,
+    OPEN,
+    FULFILLED
+}
+
+enum Metric {
+    LIKES,
+    RETWEETS,
+    COMMENTS
+}
+
+struct TaskSpecs {
+    Status status;
+    Platform platform;
+    address sponsor;
+    address promoter;
+    uint256 promoterUserId;
+    address erc20Token;
+    uint256 depositAmount;
+    uint256 timeWindowStart; // verify that using timestamps is "safe" (https://eips.ethereum.org/EIPS/eip-1620)
+    uint256 timeWindowEnd;
+}
+
+struct MileStoneTask {
+    Metric metric;
+    bool linear;
+    bool isPublic;
+    uint256 delay;
+    uint256[] ticks;
+    uint256[] values;
+    bytes32 taskHash;
+    string data;
+}
 
 // ==================================
 // ====== Escrow Base Contract ======
@@ -60,7 +102,7 @@ contract Escrow is IEscrow, ChainlinkConsumer, Ownable {
         uint256 depositAmount,
         uint256 timeWindowStart,
         uint256 timeWindowEnd,
-        uint256 persistenceDuration,
+        uint256 delay,
         bytes32 taskHash
     ) external payable {
         require(
@@ -74,7 +116,9 @@ contract Escrow is IEscrow, ChainlinkConsumer, Ownable {
         bool success = IERC20(erc20Token).transferFrom(msg.sender, address(this), depositAmount);
         require(success, 'ERC20 Token could not be transferred');
 
-        tasks[taskCount] = Task({
+        uint256 taskId = taskCount++;
+
+        tasks[taskId] = Task({
             status: Status.OPEN,
             platform: platform,
             sponsor: msg.sender,
@@ -84,13 +128,11 @@ contract Escrow is IEscrow, ChainlinkConsumer, Ownable {
             depositAmount: depositAmount,
             timeWindowStart: timeWindowStart,
             timeWindowEnd: timeWindowEnd,
-            persistenceDuration: persistenceDuration,
+            delay: delay,
             taskHash: taskHash
         });
 
-        emit TaskCreated(taskCount, msg.sender, promoter);
-
-        taskCount++;
+        emit TaskCreated(taskId, msg.sender, promoter);
     }
 
     // NOTE: maybe better to keep inline in fulfill
@@ -125,7 +167,7 @@ contract Escrow is IEscrow, ChainlinkConsumer, Ownable {
     }
 
     function withdraw() external onlyOwner {
-        (bool success, bytes memory returndata) = owner().call{value: address(this).balance}('');
+        (bool success, ) = owner().call{value: address(this).balance}('');
         require(success, 'balance could not be transferred');
     }
 }

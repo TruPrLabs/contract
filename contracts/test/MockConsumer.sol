@@ -7,7 +7,7 @@ import 'hardhat/console.sol';
 
 import '../IEscrow.sol';
 
-contract ChainlinkConsumer {
+contract MockChainlinkConsumer {
     address private linkToken = 0xa36085F69e2889c224210F603D836748e7dC0088;
 
     constructor(address _oracle) {}
@@ -25,10 +25,8 @@ contract ChainlinkConsumer {
     }
 
     function mockFulfill(bytes memory data, bytes4 fulfillSelector) internal {
-        (uint256 taskId, IEscrow.Task memory t) = abi.decode(data, (uint256, IEscrow.Task));
-        (bool success, bytes memory returnData) = address(this).call(
-            abi.encodeWithSelector(fulfillSelector, 0, taskId, true)
-        );
+        (uint256 taskId, ) = abi.decode(data, (uint256, IEscrow.Task));
+        (bool success, ) = address(this).call(abi.encodeWithSelector(fulfillSelector, 0, taskId, true));
         require(success, 'could not call fulfillSelector');
     }
 
@@ -49,6 +47,10 @@ contract TestChainlinkConsumer is ChainlinkClient {
 
     mapping(uint256 => bool) public fulfilled;
 
+    constructor() {
+        setPublicChainlinkToken();
+    }
+
     function test() external returns (bytes32 requestId) {
         // uint256 a = 1234;
         // address b = 0x000000000000000000000000000000000000dead;
@@ -57,7 +59,7 @@ contract TestChainlinkConsumer is ChainlinkClient {
         Chainlink.Request memory request = buildChainlinkRequest(jobIdTest, address(this), this.fulfill.selector);
         // request.addBytes('data', data);
         request.addUint('taskId', 666);
-        request.addUint('promoterId', 1234);
+        request.add('promoterId', '1234');
         request.addUint('timeWindowStart', block.timestamp);
         request.addUint('timeWindowEnd', block.timestamp + 1000);
         request.addUint('duration', 88888888);
@@ -69,7 +71,7 @@ contract TestChainlinkConsumer is ChainlinkClient {
 
     function fulfill(
         bytes32 requestId,
-        // uint256 taskId,
+        uint256 taskId,
         bool success
     ) external {
         // fulfilled[taskId] = success;
