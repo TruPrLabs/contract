@@ -7,15 +7,15 @@ async function deploy() {
   [owner, promoter, ...signers] = await ethers.getSigners();
 
   // Token
-  const Erc20MockToken = await ethers.getContractFactory('ERC20Mock');
-  const token1 = await Erc20MockToken.deploy('MockToken', 'MOCK');
+  const MOCKERC20Token = await ethers.getContractFactory('MOCKERC20');
+  const token1 = await MOCKERC20Token.deploy('MockToken', 'MOCK');
   await token1.deployed();
 
-  const token2 = await Erc20MockToken.deploy('BananaToken', 'BANA');
+  const token2 = await MOCKERC20Token.deploy('BananaToken', 'BANA');
   await token2.deployed();
 
-  console.log('Erc20Mock contract1 deployed to:', token1.address);
-  console.log('Erc20Mock contract2 deployed to:', token2.address);
+  console.log('MOCKERC20 contract1 deployed to:', token1.address);
+  console.log('MOCKERC20 contract2 deployed to:', token2.address);
 
   let tx;
   tx = await token1.mintFor(owner.address, '1000');
@@ -31,7 +31,7 @@ async function deploy() {
   // console.log('Treasury deployed to:', treasury.address);
 
   // Escrow Platform
-  const EscrowPlatform = await ethers.getContractFactory('PrivateEscrow');
+  const EscrowPlatform = await ethers.getContractFactory('PersonalisedEscrow');
   const contract = await EscrowPlatform.deploy(
     '0xa07463D2C0bDb92Ec9C49d6ffAb59b864A48A660', // oracle
     [token1.address, token2.address],

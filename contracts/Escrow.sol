@@ -8,7 +8,8 @@ import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
 import './IEscrow.sol';
-import './APIConsumer.sol';
+// import './APIConsumer.sol';
+import './test/MockConsumer.sol';
 
 // ==================================
 // ====== Escrow Base Contract ======
@@ -102,15 +103,15 @@ contract Escrow is IEscrow {
 }
 
 // ==================================
-// ===== PrivateEscrow Contract =====
+// ===== PersonalisedEscrow Contract =====
 // ==================================
 
-contract PrivateEscrow is Escrow, MOCKChainlinkConsumer {
+contract PersonalisedEscrow is Escrow, ChainlinkConsumer {
     constructor(
         address oracle,
         address[] memory tokenWhitelist,
         address treasury
-    ) Escrow(tokenWhitelist, treasury) MOCKChainlinkConsumer(oracle) {}
+    ) Escrow(tokenWhitelist, treasury) ChainlinkConsumer(oracle) {}
 
     // ====================== User API ========================
 

@@ -1,7 +1,7 @@
 const hre = require('hardhat');
 
 async function deploy() {
-  const EscrowPlatform = await ethers.getContractFactory('PrivateEscrow');
+  const EscrowPlatform = await ethers.getContractFactory('PersonalisedEscrow');
   const contract = await EscrowPlatform.deploy();
   await contract.deployed();
 

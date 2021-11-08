@@ -37,12 +37,12 @@ describe('Escrow Platform', () => {
   let taskId;
 
   beforeEach(async () => {
-    EscrowPlatform = await ethers.getContractFactory('PrivateEscrow');
-    Erc20MockToken = await ethers.getContractFactory('ERC20Mock');
+    EscrowPlatform = await ethers.getContractFactory('PersonalisedEscrow');
+    ERC20Token = await ethers.getContractFactory('MOCKERC20');
 
     [owner, sponsor, promoter, ...signers] = await ethers.getSigners();
 
-    token = await Erc20MockToken.deploy('MockToken', 'MOCK');
+    token = await ERC20Token.deploy('MockToken', 'MOCK');
 
     contract = await EscrowPlatform.deploy(
       '0x000000000000000000000000000000000000dEaD', //oracle
