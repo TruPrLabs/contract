@@ -16,10 +16,9 @@ contract ChainlinkConsumer is ChainlinkClient {
     address private oracle;
     address private linkToken = 0xa36085F69e2889c224210F603D836748e7dC0088;
 
-    bytes32 private jobIdTimeline = bytes32('e5ce0aaf603d4aa2be36b62bb296ce96');
-    bytes32 private jobIdLookup = bytes32('438fb98017e94736ba2329964c164a6c');
+    bytes32 private jobId = bytes32('e5ce0aaf603d4aa2be36b62bb296ce96');
 
-    uint256 private fee = 0.1 * 10**18;
+    uint256 private fee = 0.1 ether;
 
     constructor(address _oracle) {
         owner = msg.sender;
@@ -27,20 +26,23 @@ contract ChainlinkConsumer is ChainlinkClient {
         setPublicChainlinkToken();
     }
 
-    function verifyTimelineData(bytes memory data, bytes4 fulfillSelector) internal returns (bytes32 requestId) {
-        Chainlink.Request memory request = buildChainlinkRequest(jobIdTimeline, address(this), fulfillSelector);
-        request.addBytes('data', data);
+    function verifyTask(
+        uint256 taskId,
+        uint256 timeWindowStart,
+        uint256 timeWindowEnd,
+        uint256 vestingTerm,
+        string memory data,
+        bytes4 fulfillSelector
+    ) internal {
+        Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), fulfillSelector);
 
-        // return sendOperatorRequestTo(oracle, request, fee);
-        return sendChainlinkRequestTo(oracle, request, fee);
-    }
+        request.addUint('taskId', taskId);
+        request.addUint('timeWindowStart', timeWindowStart);
+        request.addUint('timeWindowEnd', timeWindowEnd);
+        request.addUint('vestingTerm', vestingTerm);
+        request.add('data', data);
 
-    function verifyLookupData(bytes memory data, bytes4 fulfillSelector) internal returns (bytes32 requestId) {
-        Chainlink.Request memory request = buildChainlinkRequest(jobIdLookup, address(this), fulfillSelector);
-        request.addBytes('data', data);
-
-        // return sendOperatorRequestTo(oracle, request, fee);
-        return sendChainlinkRequestTo(oracle, request, fee);
+        sendChainlinkRequestTo(oracle, request, fee);
     }
 
     function withdrawLink() external {

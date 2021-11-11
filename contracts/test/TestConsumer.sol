@@ -2,56 +2,23 @@
 pragma solidity ^0.8.0;
 
 import '@chainlink/contracts/src/v0.8/ChainlinkClient.sol';
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import 'hardhat/console.sol';
-
-import '../IEscrow.sol';
-
-contract MockChainlinkConsumer {
-    address private linkToken = 0xa36085F69e2889c224210F603D836748e7dC0088;
-
-    constructor(address _oracle) {}
-
-    modifier recordChainlinkFulfillment(bytes32 requestId) {
-        _;
-    }
-
-    function verifyTask(
-        uint256 taskId,
-        uint256 timeWindowStart,
-        uint256 timeWindowEnd,
-        uint256 vestingTerm,
-        string memory data,
-        bytes4 fulfillSelector
-    ) internal {
-        mockFulfill(taskId, fulfillSelector);
-    }
-
-    function mockFulfill(uint256 taskId, bytes4 fulfillSelector) internal {
-        (bool success, ) = address(this).call(abi.encodeWithSelector(fulfillSelector, 0, taskId, true));
-        require(success, 'could not call fulfillSelector');
-    }
-
-    function withdrawLink() external {
-        uint256 balance = IERC20(linkToken).balanceOf(address(this));
-        IERC20(linkToken).transfer(msg.sender, balance);
-    }
-}
 
 contract TestChainlinkConsumer is ChainlinkClient {
     using Chainlink for Chainlink.Request;
 
     address private oracle = 0xDe2Fa809f8E0c702983C846Becd044c24B86C3EE;
 
+    uint256 private fee = 0.1 * 10**18;
+
+    constructor() {
+        setPublicChainlinkToken();
+    }
+
     bytes32 private jobIdTest = bytes32('ec7d958e15a44c48adcf1d927f0069cb');
 
     bool public lastsuccess;
 
     mapping(uint256 => bool) public fulfilled;
-
-    constructor() {
-        setPublicChainlinkToken();
-    }
 
     function test() external returns (bytes32 requestId) {
         // uint a = 1234;
@@ -65,10 +32,9 @@ contract TestChainlinkConsumer is ChainlinkClient {
         request.addUint('timeWindowStart', block.timestamp);
         request.addUint('timeWindowEnd', block.timestamp + 1000);
         request.addUint('duration', 88888888);
-        request.add('taskHash', '0x1234569999999999999999999999999999999999999999999999999999999999');
+        request.add('taskHash', '0x123456999999999999999999999999999999999999999999');
 
-        // return sendOperatorRequestTo(oracle, request, 0.1 ether);
-        return sendChainlinkRequestTo(oracle, request, 0.1 ether);
+        return sendChainlinkRequestTo(oracle, request, fee);
     }
 
     function fulfill(
