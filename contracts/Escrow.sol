@@ -10,9 +10,8 @@ import '@openzeppelin/contracts/access/Ownable.sol';
 import './IEscrow.sol';
 
 // Note: Switch when testing
-import './APIConsumer.sol';
-
-// import {MockChainlinkConsumer as ChainlinkConsumer} from './test/MockConsumer.sol';
+// import {ChainlinkConsumer} from './APIConsumer.sol';
+import {MockChainlinkConsumer as ChainlinkConsumer} from './test/MockConsumer.sol';
 
 // struct MileStoneTask {
 //     ;
@@ -36,62 +35,29 @@ struct Task {
     address promoter;
     address erc20Token;
     uint256 depositAmount;
+    uint256 balance;
     uint256 timeWindowStart;
     uint256 timeWindowEnd;
     uint256 vestingTerm;
-    ScoreFn.Data payoutRate;
+    ScoreFnData payoutRate;
     string data;
 }
 
 // Chainlink responses
 
 enum ResponseStatus {
-    FAILURE,
+    INVALID,
     SUCCESS,
     ERROR
 }
 
-library ScoreFn {
-    struct Data {
-        bool linear;
-        uint64[] x;
-        uint64[] y;
-    }
-
-    uint256 constant MAX_VALUE = type(uint64).max;
-
-    function evaluate(
-        Data memory self,
-        uint64 x,
-        uint256 multiplier
-    ) external pure returns (uint256) {
-        // requires: x[-1] == MAX_VALUE
-        if (x == MAX_VALUE) {
-            if (self.y[self.y.length - 1] == MAX_VALUE) return multiplier;
-            return (((multiplier >> 64) * self.y[self.y.length - 1]) / MAX_VALUE) << 64; // guard against overflow
-        }
-        // follows: x < MAX_VALUE
-
-        uint256 i;
-        // requires: x[i] < x[i+1]
-        // requires: x[-1] == MAX_VALUE
-        while (x < self.x[i]) i++;
-        // follows:  i <= x.length
-
-        // requires: y.length == x.length
-        uint64 y0 = (i == 0) ? 0 : self.y[i - 1]; // implicit 0 added
-
-        if (!self.linear) return y0; // return left value for piecewise-continuous functions
-
-        uint64 y1 = self.y[i];
-
-        uint64 x0 = (i == 0) ? 0 : self.x[i - 1]; // implicit 0 added
-        uint64 x1 = self.x[i];
-
-        // calculate in lower precision to avoid overflow
-        return (((multiplier >> 64) * (y0 + (uint256(y1) * (x - x0)) / (x1 - x0))) / MAX_VALUE) << 64;
-    }
+struct ScoreFnData {
+    bool linear;
+    uint256[] x;
+    uint256[] y;
 }
+
+uint256 constant SCORE_MAX_VALUE = type(uint256).max;
 
 // ==================================
 // ====== Escrow Base Contract ======
@@ -100,15 +66,14 @@ library ScoreFn {
 contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
     // ====================== Storage ========================
 
-    uint256 public baseFeePerMille = 50; // per mille; fee given to platform
+    uint256 public baseFeePerMille = 50; // fee given to platform
     uint256 public taskCount = 0; // XXX: Why did Sablier start at 10 000? https://github.com/sablierhq/sablier/blob/develop/packages/protocol/contracts/Sablier.sol
 
     mapping(uint256 => Task) internal tasks;
-    mapping(uint256 => ScoreFn.Data) internal payoutRates;
     mapping(uint256 => mapping(address => uint256)) lastPayout;
 
     mapping(address => bool) private tokenWhitelist;
-    mapping(address => uint256) balances;
+    mapping(address => uint256) treasury;
 
     constructor(address oracle, address[] memory _tokenWhitelist) ChainlinkConsumer(oracle) {
         for (uint256 i = 0; i < _tokenWhitelist.length; i++) {
@@ -122,11 +87,11 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         return tasks[taskId].status;
     }
 
-    function getTask(uint256 taskId) public view returns (Task memory) {
+    function getTask(uint256 taskId) external view returns (Task memory) {
         return tasks[taskId];
     }
 
-    function getAllTasks() public view returns (Task[] memory) {
+    function getAllTasks() external view returns (Task[] memory) {
         Task[] memory _tasks = new Task[](taskCount);
         for (uint256 i; i < taskCount; i++) {
             _tasks[i] = tasks[i];
@@ -134,76 +99,18 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         return _tasks;
     }
 
+    // hypothetical rewards, given score, assuming it can be fulfilled
+    function calculateRewards(
+        uint256 taskId,
+        address who,
+        uint256 score
+    ) external view returns (uint256) {
+        Task storage task = tasks[taskId];
+        uint256 accumulatedRewards = evaluateScore(task.payoutRate, score);
+        return accumulatedRewards - lastPayout[taskId][who];
+    }
+
     // ====================== Core API ========================
-
-    // function createTask(
-    //     bool linearRate,
-    //     // TaskType taskType,
-    //     address promoter,
-    //     address erc20Token,
-    //     uint256 depositAmount,
-    //     uint256 timeWindowStart,
-    //     uint256 timeWindowEnd,
-    //     uint64 vestingTerm,
-    //     uint64[] calldata xticks,
-    //     uint64[] calldata yticks,
-    //     string calldata data
-    // ) external {
-    //     require(block.timestamp < timeWindowEnd && timeWindowStart < timeWindowEnd, 'invalid timeframe given');
-    //     require(vestingTerm <= 60 * 60 * 24 * 28, 'vestingTerm cannot be longer than 28 days'); // to avoid deposit lockup
-    //     require(tokenWhitelist[erc20Token], 'token is not whitelisted');
-    //     require(depositAmount > 0, 'depositAmount cannot be 0');
-    //     require(promoter != msg.sender, 'promoter cannot be sender');
-
-    //     require(xticks.length == yticks.length, 'ticks must have same length');
-    //     require(xticks[xticks.length - 1] == ScoreFn.MAX_VALUE, 'xticks must end at max value');
-
-    //     if (xticks.length > 1) {
-    //         for (uint256 i = 1; i < xticks.length; i++)
-    //             require(xticks[i - 1] < xticks[i] && yticks[i - 1] < yticks[i], 'ticks must be increasing');
-    //     }
-
-    //     bool success = IERC20(erc20Token).transferFrom(msg.sender, address(this), depositAmount);
-    //     require(success, 'ERC20 Token could not be transferred');
-
-    //     uint256 taskId = taskCount++;
-    // }
-
-    // function _addTask(
-    //     uint256 taskId,
-    //     bool linearRate,
-    //     address promoter,
-    //     address erc20Token,
-    //     uint256 depositAmount,
-    //     uint256 timeWindowStart,
-    //     uint256 timeWindowEnd,
-    //     string calldata data
-    // ) external {
-    //     tasks[taskId] = Task({
-    //         status: Status.OPEN,
-    //         // taskType: taskType,
-    //         sponsor: msg.sender,
-    //         promoter: promoter,
-    //         erc20Token: erc20Token,
-    //         depositAmount: depositAmount,
-    //         timeWindowStart: timeWindowStart,
-    //         timeWindowEnd: timeWindowEnd,
-    //         data: data
-    //     });
-    // }
-
-    // function _addPayoutRate(
-    //     uint256 taskId,
-    //     bool linearRate,
-    //     address promoter,
-    //     address erc20Token,
-    //     uint256 depositAmount,
-    //     uint256 timeWindowStart,
-    //     uint256 timeWindowEnd,
-    //     string calldata data
-    // ) external {
-    //     payoutRate[taskId] = ScoreFn.Data()
-    // }
 
     function createTask(
         bool linearRate,
@@ -212,9 +119,9 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         uint256 depositAmount,
         uint256 timeWindowStart,
         uint256 timeWindowEnd,
-        uint64 vestingTerm,
-        uint64[] memory xticks,
-        uint64[] memory yticks,
+        uint256 vestingTerm,
+        uint256[] memory xticks,
+        uint256[] memory yticks,
         string memory data
     ) external {
         require(block.timestamp < timeWindowEnd && timeWindowStart < timeWindowEnd, 'invalid timeframe given');
@@ -224,35 +131,65 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         require(promoter != msg.sender, 'promoter cannot be sender');
 
         require(xticks.length == yticks.length, 'ticks must have same length');
-        require(xticks[xticks.length - 1] == ScoreFn.MAX_VALUE, 'xticks must end at max value');
+        require(xticks[xticks.length - 1] == SCORE_MAX_VALUE, 'xticks must end at max value');
+        require(yticks[yticks.length - 1] <= depositAmount, 'total payout cannot be greater than depositAmount');
+        require(depositAmount <= type(uint192).max, 'calculations would overflow');
 
-        if (xticks.length > 1) {
+        if (xticks.length > 1)
             for (uint256 i = 1; i < xticks.length; i++)
                 require(xticks[i - 1] < xticks[i] && yticks[i - 1] < yticks[i], 'ticks must be increasing');
-        }
 
         bool success = IERC20(erc20Token).transferFrom(msg.sender, address(this), depositAmount);
         require(success, 'ERC20 Token could not be transferred');
 
         uint256 taskId = taskCount++;
 
-        ScoreFn.Data memory payoutRate = ScoreFn.Data(linearRate, xticks, yticks);
+        ScoreFnData memory payoutRate = ScoreFnData(linearRate, xticks, yticks);
+
+        tasks[taskId] = Task({
+            status: Status.OPEN,
+            sponsor: msg.sender,
+            promoter: promoter,
+            erc20Token: erc20Token,
+            depositAmount: depositAmount,
+            balance: depositAmount,
+            timeWindowStart: timeWindowStart,
+            timeWindowEnd: timeWindowEnd,
+            vestingTerm: vestingTerm,
+            payoutRate: payoutRate,
+            data: data
+        });
 
         emit TaskCreated(taskId, msg.sender, promoter);
     }
 
+    // ====================== Internal ========================
+
     // NOTE: maybe better to keep inline in fulfill
-    function payoutTo(
-        address promoter,
-        address token,
-        uint256 amount
-    ) internal {
-        uint256 platformFee = (amount * baseFeePerMille) / 1000;
-        uint256 reward = amount - platformFee;
+    function payoutPromoter(uint256 taskId, uint256 score) internal {
+        Task memory task = tasks[taskId];
 
-        balances[token] += platformFee;
+        assert(task.promoter != address(0)); // disregarding public promotrions for now
 
-        bool transferSuccessful = IERC20(token).transfer(promoter, reward);
+        // console.log('task.balance', task.balance);
+        // evaluate the piecewise-linear / constant payout function, given the current score and the total deposit
+        uint256 accumulatedRewards = evaluateScore(task.payoutRate, score);
+        uint256 pendingReward = accumulatedRewards - lastPayout[taskId][task.promoter]; // also ensures that accumulatedRewards >= last
+
+        // console.log('pendingReward', pendingReward);
+        // shouldn't be required (except for public case)
+        require(pendingReward <= task.balance, 'payout cannot be larger than balance');
+        task.balance -= pendingReward;
+
+        // task.status = Status.FULFILLED;
+        lastPayout[taskId][task.promoter] = accumulatedRewards;
+
+        uint256 platformFee = (task.depositAmount * baseFeePerMille) / 1000;
+        uint256 reward = task.depositAmount - platformFee;
+
+        treasury[task.erc20Token] += platformFee;
+
+        bool transferSuccessful = IERC20(task.erc20Token).transfer(task.promoter, reward);
         require(transferSuccessful, 'ERC20 Token could not be transferred');
     }
 
@@ -268,7 +205,7 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
     }
 
     function withdrawToken(address token) external onlyOwner {
-        bool transferSuccessful = IERC20(token).transfer(owner(), balances[token]);
+        bool transferSuccessful = IERC20(token).transfer(owner(), treasury[token]);
         require(transferSuccessful, 'ERC20 Token could not be transferred');
     }
 
@@ -276,15 +213,69 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         (bool success, ) = owner().call{value: address(this).balance}('');
         require(success, 'balance could not be transferred');
     }
+
+    function evaluateScore(ScoreFnData memory self, uint256 x) public pure returns (uint256) {
+        // requires: x[-1] == SCORE_MAX_VALUE
+        if (x == SCORE_MAX_VALUE) return self.y[self.y.length - 1];
+
+        // follows: x < SCORE_MAX_VALUE
+
+        uint256 i;
+        // requires: x[i] < x[i+1]
+        // requires: x[-1] == SCORE_MAX_VALUE
+        while (self.x[i] < x) i++;
+        // follows:  i <= x.length
+
+        // requires: y.length == x.length
+        uint256 y0 = (i == 0) ? 0 : self.y[i - 1]; // implicit 0 added
+
+        if (!self.linear) return y0; // return left value for piecewise-continuous functions
+
+        uint256 y1 = self.y[i];
+
+        uint256 x0 = (i == 0) ? 0 : self.x[i - 1]; // implicit 0 added
+        uint256 x1 = self.x[i];
+
+        uint256 denominator = (x1 - x0) >> 192;
+        if (denominator == 0) return y0; // happens when ticks are too close
+
+        // requires: y1 <~= 2^192  // should overflow otherwise
+        // calculate in lower precision to avoid overflow
+        return y0 + ((y1 * ((x - x0) >> 192)) / denominator);
+    }
+
+    // function testScores(uint256 taskId) public view returns (uint256[] memory) {
+    //     ScoreFnData memory self = tasks[taskId].payoutRate;
+
+    //     uint256 num = 16;
+    //     uint256[] memory res = new uint256[](num + 1);
+    //     for (uint256 i; i <= num; i++) {
+    //         // res[i] = evaluateScore(self, uint64((i * type(uint64).max) / num), tasks[taskId].depositAmount);
+    //         console.log('it', i);
+    //         uint256 resi = evaluateScore(self, (i * (type(uint256).max / num)));
+    //         console.log('res', resi);
+    //         res[i] = resi;
+    //     }
+    //     return res;
+    // }
+
+    // function evaluateScores(
+    //     ScoreFnData memory self,
+    //     uint64[] memory xs
+    // ) public pure returns (uint256[] memory) {
+    //     uint256[] memory res = new uint256[](xs.length);
+    //     for (uint256 i; i < xs.length; i++) {
+    //         res[i] = evaluateScore(self, xs[i]);
+    //     }
+    //     return res;
+    // }
 }
 
 // ==================================
-// === PersonalisedEscrow Contract ==
+// ============== TruPr =============
 // ==================================
 
 contract TruPr is EscrowBase {
-    using ScoreFn for ScoreFn.Data;
-
     constructor(address oracle, address[] memory tokenWhitelist) EscrowBase(oracle, tokenWhitelist) {}
 
     // ====================== User API ========================
@@ -309,46 +300,51 @@ contract TruPr is EscrowBase {
         );
     }
 
-    // function calculateRewards()
-
+    // a task can only be cancelled by the sponsor if there's no chance a promoter
+    // can still fulfill the task and then not receive any rewards
+    // could add pending state + time delay during time window
     function cancelTask(uint256 taskId) external {
         Task storage task = tasks[taskId];
 
         require(task.status == Status.OPEN, 'task is not open');
+        require(msg.sender == task.sponsor || msg.sender == task.promoter, 'caller must be sponsor or promoter');
 
-        if (msg.sender == task.promoter) {
-            // promoter is allowed to cancel any time
-            // TODO: calculate remaining funds, transfer to sponsor; reward promoter?
-        }
+        // promoter is allowed to cancel any time; XXX: is this a good check?
         if (msg.sender == task.sponsor) {
             require(
                 block.timestamp < task.timeWindowStart || task.timeWindowEnd + task.vestingTerm < block.timestamp,
                 'must be before or after valid time window plus vesting term'
             );
-            verifyTask(
-                taskId,
-                task.timeWindowStart,
-                task.timeWindowEnd,
-                task.vestingTerm,
-                task.data,
-                this.fulfillTaskCallback.selector
-            );
         }
+
+        // NOTE: could calculate pending rewards to be paid out to promoter
+        uint256 remainingBalance = task.balance;
+        task.balance = 0;
+        task.status = Status.CLOSED;
+        // NOTE: could free up whole task struct and get gas refund
+
+        bool transferSuccessful = IERC20(task.erc20Token).transfer(task.sponsor, remainingBalance);
+        require(transferSuccessful, 'ERC20 Token could not be transferred');
     }
 
-    // function revokeTask(uint taskId) external {
-    //     Task storage task = tasks[taskId];
+    // this function can be called by the sponsor inside the timeframe
+    // calls the chainlink api and requires a score of 0 (post deleted etc.)
+    // should add time delay as a safety measure
+    function revokeTask(uint256 taskId) external {
+        Task storage task = tasks[taskId];
 
-    //     require(msg.sender == task.sponsor, 'caller is not the sponsor');
-    //     require(task.status == Status.OPEN, 'task is not open');
-    //     require(
-    //         block.timestamp < task.timeWindowStart || task.timeWindowEnd < block.timestamp,
-    //         'must be before or after valid time window'
-    //     );
+        require(msg.sender == task.sponsor, 'caller is not the sponsor');
+        require(task.status == Status.OPEN, 'task is not open');
 
-    //     bytes memory data = abi.encode(taskId, task);
-    //     verifyTask(data, this.revokeTaskCallback.selector);
-    // }
+        verifyTask(
+            taskId,
+            task.timeWindowStart,
+            task.timeWindowEnd,
+            task.vestingTerm,
+            task.data,
+            this.revokeTaskCallback.selector
+        );
+    }
 
     // ================== Chainlink Callbacks ====================
 
@@ -360,38 +356,32 @@ contract TruPr is EscrowBase {
     ) external recordChainlinkFulfillment(requestId) {
         Task storage task = tasks[taskId];
 
-        // require(task.status == Status.OPEN, 'task is not open'); // XXX: is it ok to let chainlink calls fail?
-
         if (task.status == Status.OPEN && response == ResponseStatus.SUCCESS) {
-            if (task.promoter == address(0)) {
-                // task is public
-                // TODO: chainlink node needs to be able to pass in promoter
-                // Risks: User could change address if stored in bio.. Could user change their twitter id?
-            }
+            // if (task.promoter == address(0)) {
+            //     // task is public
+            //     // TODO: chainlink node needs to be able to pass in promoter
+            //     // Risks: User could change address if stored in bio.. Could user change their twitter id?
+            // }
 
-            // evaluate the piecewise-linear / constant payout function, given the current score and the total deposit
-            uint256 totalReward = task.payoutRate.evaluate(score, task.depositAmount);
-            uint256 remainingReward = totalReward - lastPayout[taskId][task.promoter]; // ensures that totalReward >= last
-
-            task.status = Status.FULFILLED;
-
-            payoutTo(task.promoter, task.erc20Token, remainingReward);
+            task.status = Status.CLOSED;
+            payoutPromoter(taskId, score);
         }
     }
 
     function revokeTaskCallback(
         bytes32 requestId,
         uint256 taskId,
-        bool success
+        uint64 score,
+        ResponseStatus response
     ) external recordChainlinkFulfillment(requestId) {
         Task storage task = tasks[taskId];
 
-        require(task.status == Status.OPEN, 'task is not open');
-
-        if (success) {
+        if (task.status == Status.OPEN && response == ResponseStatus.INVALID) {
             task.status = Status.CLOSED;
 
-            bool transferSuccessful = IERC20(task.erc20Token).transfer(task.sponsor, task.depositAmount);
+            task.balance = 0;
+
+            bool transferSuccessful = IERC20(task.erc20Token).transfer(task.sponsor, task.balance);
             require(transferSuccessful, 'ERC20 Token could not be transferred');
         }
     }

@@ -13,6 +13,8 @@ const jumpToTime = async (t) => {
   time = centerTime(t);
 };
 
+const MaxUint256 = ethers.constants.MaxUint256;
+
 const getLatestBlockTimestamp = async () => {
   let blocknum = await network.provider.request({ method: 'eth_blockNumber' });
   let block = await network.provider.request({ method: 'eth_getBlockByNumber', params: [blocknum, true] });
@@ -37,14 +39,16 @@ describe('Escrow Platform', () => {
   let taskId;
 
   beforeEach(async () => {
-    EscrowPlatform = await ethers.getContractFactory('PersonalisedEscrow');
+    //  = await ethers.getContractFactory('TruPr');
+    TruPr = await ethers.getContractFactory('TruPr');
     ERC20Token = await ethers.getContractFactory('MOCKERC20');
 
     [owner, sponsor, promoter, ...signers] = await ethers.getSigners();
 
     token = await ERC20Token.deploy('MockToken', 'MOCK');
+    await token.deployed();
 
-    contract = await EscrowPlatform.deploy(
+    contract = await TruPr.deploy(
       '0x000000000000000000000000000000000000dEaD', //oracle
       [token.address] // whitelist
       // '0x000000000000000000000000000000000000dEaD' //treasury
@@ -52,21 +56,23 @@ describe('Escrow Platform', () => {
     contract = contract.connect(sponsor);
 
     token = token.connect(sponsor);
-    token.mintFor(sponsor.address, 1000);
-    token.approve(contract.address, ethers.constants.MaxUint256);
+    // token.mintFor(sponsor.address, 1000);
+    token.mintFor(sponsor.address, BN('0xffffffffffffffffffffffffffffffffffffffffffffffff').add(20));
+    token.approve(contract.address, MaxUint256);
   });
 
   it('Create tasks correctly', async () => {
     tx = await contract.createTask(
       0,
       promoter.address,
-      6789,
       token.address,
       100,
       time.now,
       time.future1m,
       0,
-      ethers.constants.HashZero
+      [MaxUint256],
+      [100],
+      'test'
     );
 
     receipt = await tx.wait();
@@ -80,11 +86,16 @@ describe('Escrow Platform', () => {
 
     expect(taskId).to.equal(BN('0'));
 
+    expect(task.status).to.equal(1);
     expect(task.sponsor).to.equal(sponsor.address);
     expect(task.promoter).to.equal(promoter.address);
-    expect(task.promoterUserId).to.equal(6789);
     expect(task.erc20Token).to.equal(token.address);
     expect(task.depositAmount).to.equal(100);
+    expect(task.balance).to.equal(100);
+    expect(task.timeWindowStart).to.equal(time.now);
+    expect(task.timeWindowEnd).to.equal(time.future1m);
+    expect(task.vestingTerm).to.equal(0);
+    expect(task.data).to.equal('test');
   });
 
   it('Task creation conditions', async () => {
@@ -92,57 +103,74 @@ describe('Escrow Platform', () => {
       contract.createTask(
         0,
         promoter.address,
-        6789,
         token.address,
         100,
         time.future1m,
         time.now,
         0,
-        ethers.constants.HashZero
+        [MaxUint256],
+        [100],
+        'test'
       )
-    ).to.be.revertedWith('timeWindowEnd is before timeWindowStart');
+    ).to.be.revertedWith('invalid timeframe given');
 
     await expect(
-      contract.createTask(
-        0,
-        promoter.address,
-        6789,
-        token.address,
-        0,
-        time.now,
-        time.future1m,
-        0,
-        ethers.constants.HashZero
-      )
+      contract.createTask(0, promoter.address, token.address, 0, time.now, time.future1m, 0, [MaxUint256], [0], 'test')
     ).to.be.revertedWith('depositAmount cannot be 0');
 
     await expect(
       contract.createTask(
         0,
         sponsor.address,
-        6789,
         token.address,
         100,
         time.now,
         time.future1m,
         0,
-        ethers.constants.HashZero
+        [MaxUint256],
+        [100],
+        'test'
       )
     ).to.be.revertedWith('promoter cannot be sender');
   });
+
+  // describe('Payout rate', async () => {
+  //   beforeEach(async () => {
+  //     tx = await contract.createTask(
+  //       1,
+  //       promoter.address,
+  //       token.address,
+  //       100,
+  //       time.future1m,
+  //       time.future10m,
+  //       0,
+  //       [BN('0xffffffffffff'), MaxUint256],
+  //       [90, 100],
+  //       'test'
+  //     );
+  //     receipt = await tx.wait();
+  //     taskId = receipt.events.at(-1).args.taskId;
+  //   });
+
+  //   // it('plot payout rate', async () => {
+  //   //   let res = await contract.testScores(0);
+  //   //   console.log(res);
+  //   // });
+  // });
 
   describe('Fulfill task logic', async () => {
     beforeEach(async () => {
       tx = await contract.createTask(
         0,
         promoter.address,
-        6789,
         token.address,
         100,
         time.future1m,
         time.future10m,
         0,
-        ethers.constants.HashZero
+        [MaxUint256],
+        [100],
+        'test'
       );
       receipt = await tx.wait();
       taskId = receipt.events.at(-1).args.taskId;
@@ -168,6 +196,7 @@ describe('Escrow Platform', () => {
       await expect(contract.connect(signers[0]).fulfillTask(taskId)).to.be.revertedWith('caller is not the promoter');
 
       // promoter is able to fulfill
+      await contract.setCallbackData(0, 1); // set score 0, valid response
       tx = await contract.connect(promoter).fulfillTask(taskId);
       await tx.wait();
 
