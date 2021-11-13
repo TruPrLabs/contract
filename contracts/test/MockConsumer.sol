@@ -22,7 +22,7 @@ contract MockChainlinkConsumer {
         response = _response;
     }
 
-    function verifyTask(
+    function _verifyTask(
         uint256 taskId,
         uint256 timeWindowStart,
         uint256 timeWindowEnd,
@@ -35,7 +35,21 @@ contract MockChainlinkConsumer {
         response = 0;
     }
 
-    function mockFulfill(uint256 taskId, bytes4 fulfillSelector) internal {
+    function _verifyTaskPublic(
+        uint256 taskId,
+        uint256 timeWindowStart,
+        uint256 timeWindowEnd,
+        uint256 vestingTerm,
+        string memory data,
+        string memory authentication,
+        bytes4 fulfillSelector
+    ) internal {
+        mockFulfill(taskId, fulfillSelector);
+        score = 0;
+        response = 0;
+    }
+
+    function mockFulfill(uint256 taskId, bytes4 fulfillSelector) private {
         (bool success, ) = address(this).call(abi.encodeWithSelector(fulfillSelector, 0, taskId, score, response));
         require(success, 'could not call fulfillSelector');
     }

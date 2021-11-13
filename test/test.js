@@ -61,7 +61,7 @@ describe('Escrow Platform', () => {
     token.approve(contract.address, MaxUint256);
   });
 
-  it('Create tasks correctly', async () => {
+  it('Task fields filled out correctly', async () => {
     tx = await contract.createTask(
       0,
       promoter.address,
@@ -70,7 +70,7 @@ describe('Escrow Platform', () => {
       time.now,
       time.future1m,
       0,
-      [MaxUint256],
+      [100],
       [100],
       'test'
     );
@@ -82,7 +82,7 @@ describe('Escrow Platform', () => {
 
     taskId = log.args.taskId;
 
-    let task = await contract.getTask(taskId);
+    let task = await contract.tasks(taskId);
 
     expect(taskId).to.equal(BN('0'));
 
@@ -98,40 +98,24 @@ describe('Escrow Platform', () => {
     expect(task.data).to.equal('test');
   });
 
-  it('Task creation conditions', async () => {
-    await expect(
-      contract.createTask(
-        0,
-        promoter.address,
-        token.address,
-        100,
-        time.future1m,
-        time.now,
-        0,
-        [MaxUint256],
-        [100],
-        'test'
-      )
-    ).to.be.revertedWith('invalid timeframe given');
+  describe('Can only create a task if', async () => {
+    it('valid time frame given', async () => {
+      await expect(
+        contract.createTask(0, promoter.address, token.address, 100, time.future1m, time.now, 0, [100], [100], 'test')
+      ).to.be.revertedWith('invalid time frame given');
+    });
 
-    await expect(
-      contract.createTask(0, promoter.address, token.address, 0, time.now, time.future1m, 0, [MaxUint256], [0], 'test')
-    ).to.be.revertedWith('depositAmount cannot be 0');
+    it('deposit amount is greater 0', async () => {
+      await expect(
+        contract.createTask(0, promoter.address, token.address, 0, time.now, time.future1m, 0, [100], [0], 'test')
+      ).to.be.revertedWith('depositAmount cannot be 0');
+    });
 
-    await expect(
-      contract.createTask(
-        0,
-        sponsor.address,
-        token.address,
-        100,
-        time.now,
-        time.future1m,
-        0,
-        [MaxUint256],
-        [100],
-        'test'
-      )
-    ).to.be.revertedWith('promoter cannot be sender');
+    it('promoter is not sender', async () => {
+      await expect(
+        contract.createTask(0, sponsor.address, token.address, 100, time.now, time.future1m, 0, [100], [100], 'test')
+      ).to.be.revertedWith('promoter cannot be sender');
+    });
   });
 
   // describe('Payout rate', async () => {
@@ -144,7 +128,7 @@ describe('Escrow Platform', () => {
   //       time.future1m,
   //       time.future10m,
   //       0,
-  //       [BN('0xffffffffffff'), MaxUint256],
+  //       [BN('0xffffffffffff'), 100],
   //       [90, 100],
   //       'test'
   //     );
@@ -168,7 +152,7 @@ describe('Escrow Platform', () => {
         time.future1m,
         time.future10m,
         0,
-        [MaxUint256],
+        [100],
         [100],
         'test'
       );
@@ -178,13 +162,13 @@ describe('Escrow Platform', () => {
 
     it("promoter can't fulfill outside of time window", async () => {
       // too early
-      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('not in valid time window');
+      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('must be in valid time window');
 
       // advance to after time window
       jumpToTime(time.future1h);
 
       // too late
-      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('not in valid time window');
+      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('must be in valid time window');
     });
 
     it('only promoter is able to fulfill only once', async () => {
@@ -200,40 +184,61 @@ describe('Escrow Platform', () => {
       tx = await contract.connect(promoter).fulfillTask(taskId);
       await tx.wait();
 
-      // can't fulfill again
-      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('task is not open');
+      // can't fulfill again; NOTE: task state is only for cancelling / revoking now
+      // await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('task is not open');
     });
 
-    it('only sponsor can revoke task before expiration only once', async () => {
+    it('before start: only sponsor can revoke task only once', async () => {
       // only sponsor can revoke
       await expect(contract.connect(promoter).revokeTask(taskId)).to.be.revertedWith('caller is not the sponsor');
+      await expect(contract.connect(promoter).requestRevokeTask(taskId)).to.be.revertedWith(
+        'caller is not the sponsor'
+      );
 
       // sponsor can revoke (before start)
+      await contract.requestRevokeTask(taskId);
+      // cannot revoke before revoke delay
+      await expect(contract.revokeTask(taskId)).to.be.revertedWith('must wait for revoke delay to pass');
+      jumpToTime(time.now + 2 * time.delta1d);
+      await contract.setCallbackData(0, 0); // response: not found
       await contract.revokeTask(taskId);
-      // XXX: count balances
+
+      expect((await contract.tasks(taskId)).status).to.equal(0);
+      expect((await contract.tasks(taskId)).balance).to.equal(0);
 
       // sponsor can't revoke twice
+      await expect(contract.requestRevokeTask(taskId)).to.be.revertedWith('task is not open');
       await expect(contract.revokeTask(taskId)).to.be.revertedWith('task is not open');
     });
 
-    it('sponsor can revoke task after expiration, promoter cannot fulfill revoked task', async () => {
-      // advance into to after time window
-      jumpToTime(time.future1h);
+    it('before start: only sponsor can cancel task only once', async () => {
+      // only sponsor can cancel
+      await expect(contract.connect(signers[0]).cancelTask(taskId)).to.be.revertedWith(
+        'caller must be sponsor or promoter'
+      );
 
-      // sponsor can revoke (after end)
-      await contract.revokeTask(taskId);
+      // sponsor can cancel (before start)
+      await contract.cancelTask(taskId);
 
-      // promoter can't fulfill revoked task
-      await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('task is not open');
+      expect((await contract.tasks(taskId)).status).to.equal(0);
+      expect((await contract.tasks(taskId)).balance).to.equal(0);
+
+      // sponsor can't cancel twice
+      // await expect(contract.cancelTask(taskId)).to.be.revertedWith('task is not open');
     });
 
-    it('promoter cannot fulfill revoked task', async () => {
+    it('after end: sponsor can cancel task', async () => {
+      jumpToTime(time.future10m);
+      await expect(contract.cancelTask(taskId)).to.be.revertedWith('must be in valid cancellation period');
       // advance into to after time window
-      jumpToTime(time.future1h);
+      jumpToTime(time.future1d);
+      await contract.cancelTask(taskId);
+    });
 
-      await contract.revokeTask(taskId);
-
+    it('promoter cannot fulfill closed task', async () => {
+      await contract.cancelTask(taskId);
       // can't fulfill after task is revoked
+      jumpToTime(time.future1m);
       await expect(contract.connect(promoter).fulfillTask(taskId)).to.be.revertedWith('task is not open');
     });
   });

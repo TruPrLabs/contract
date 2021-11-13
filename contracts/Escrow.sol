@@ -13,14 +13,9 @@ import './IEscrow.sol';
 // import {ChainlinkConsumer} from './APIConsumer.sol';
 import {MockChainlinkConsumer as ChainlinkConsumer} from './test/MockConsumer.sol';
 
-// struct MileStoneTask {
-//     ;
-// }
-
 enum Status {
     CLOSED,
-    OPEN,
-    FULFILLED
+    OPEN
 }
 
 // enum TaskType {
@@ -57,38 +52,36 @@ struct ScoreFnData {
     uint256[] y;
 }
 
-uint256 constant SCORE_MAX_VALUE = type(uint256).max;
-
 // ==================================
 // ====== Escrow Base Contract ======
 // ==================================
 
 contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
     // ====================== Storage ========================
+    uint256 constant MAX_SCORE = 100;
+
+    uint256 public MaxVestingTerm = 60 * 60 * 24 * 28; // 28 days
+    uint256 public MaxTimeWindow = 60 * 60 * 24 * 28 * 12 * 2; // 2 years
+    uint256 public PendingRevokeDelay = 60 * 60 * 24; // 1 day
 
     uint256 public baseFeePerMille = 50; // fee given to platform
     uint256 public taskCount = 0; // XXX: Why did Sablier start at 10 000? https://github.com/sablierhq/sablier/blob/develop/packages/protocol/contracts/Sablier.sol
 
-    mapping(uint256 => Task) internal tasks;
-    mapping(uint256 => mapping(address => uint256)) lastPayout;
+    mapping(uint256 => Task) public tasks;
+    mapping(uint256 => mapping(address => uint256)) totalPayout;
+    mapping(uint256 => uint256) public pendingRevoke;
 
     mapping(address => bool) private tokenWhitelist;
     mapping(address => uint256) treasury;
 
     constructor(address oracle, address[] memory _tokenWhitelist) ChainlinkConsumer(oracle) {
-        for (uint256 i = 0; i < _tokenWhitelist.length; i++) {
-            tokenWhitelist[_tokenWhitelist[i]] = true;
-        }
+        for (uint256 i = 0; i < _tokenWhitelist.length; i++) tokenWhitelist[_tokenWhitelist[i]] = true;
     }
 
     // ====================== Getters ========================
 
     function getStatus(uint256 taskId) external view returns (Status) {
         return tasks[taskId].status;
-    }
-
-    function getTask(uint256 taskId) external view returns (Task memory) {
-        return tasks[taskId];
     }
 
     function getAllTasks() external view returns (Task[] memory) {
@@ -99,6 +92,10 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         return _tasks;
     }
 
+    function isPendingRevoke(uint256 taskId) external view returns (bool time) {
+        return pendingRevoke[taskId] > 0;
+    }
+
     // hypothetical rewards, given score, assuming it can be fulfilled
     function calculateRewards(
         uint256 taskId,
@@ -107,7 +104,30 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
     ) external view returns (uint256) {
         Task storage task = tasks[taskId];
         uint256 accumulatedRewards = evaluateScore(task.payoutRate, score);
-        return accumulatedRewards - lastPayout[taskId][who];
+        return accumulatedRewards - totalPayout[taskId][who];
+    }
+
+    // ====================== Setters ========================
+
+    function setMaxVestingTerm(uint256 term) external onlyOwner {
+        MaxVestingTerm = term;
+    }
+
+    function setMaxTimeWindow(uint256 time) external onlyOwner {
+        MaxTimeWindow = time;
+    }
+
+    function setPendingRevokeDelay(uint256 delay) external onlyOwner {
+        PendingRevokeDelay = delay;
+    }
+
+    function setBaseFee(uint256 feePerMille) external onlyOwner {
+        require(feePerMille <= 50, 'fee cannot be larger than 5%');
+        baseFeePerMille = feePerMille;
+    }
+
+    function setTokenWhitelisted(address token, bool allowed) external onlyOwner {
+        tokenWhitelist[token] = allowed;
     }
 
     // ====================== Core API ========================
@@ -124,16 +144,20 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         uint256[] memory yticks,
         string memory data
     ) external {
-        require(block.timestamp < timeWindowEnd && timeWindowStart < timeWindowEnd, 'invalid timeframe given');
-        require(vestingTerm <= 60 * 60 * 24 * 28, 'vestingTerm cannot be longer than 28 days'); // to avoid deposit lockup
+        require(
+            block.timestamp < timeWindowEnd &&
+                timeWindowStart < timeWindowEnd &&
+                timeWindowEnd - timeWindowStart <= MaxTimeWindow,
+            'invalid time frame given'
+        );
+        require(vestingTerm <= MaxVestingTerm, 'vestingTerm cannot be longer than 28 days'); // to avoid deposit lockup
         require(tokenWhitelist[erc20Token], 'token is not whitelisted');
         require(depositAmount > 0, 'depositAmount cannot be 0');
         require(promoter != msg.sender, 'promoter cannot be sender');
 
         require(xticks.length == yticks.length, 'ticks must have same length');
-        require(xticks[xticks.length - 1] == SCORE_MAX_VALUE, 'xticks must end at max value');
+        require(xticks[xticks.length - 1] == MAX_SCORE, 'xticks must end at max value');
         require(yticks[yticks.length - 1] <= depositAmount, 'total payout cannot be greater than depositAmount');
-        require(depositAmount <= type(uint192).max, 'calculations would overflow');
 
         if (xticks.length > 1)
             for (uint256 i = 1; i < xticks.length; i++)
@@ -167,14 +191,14 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
 
     // NOTE: maybe better to keep inline in fulfill
     function payoutPromoter(uint256 taskId, uint256 score) internal {
-        Task memory task = tasks[taskId];
+        Task storage task = tasks[taskId];
 
         assert(task.promoter != address(0)); // disregarding public promotrions for now
 
         // console.log('task.balance', task.balance);
         // evaluate the piecewise-linear / constant payout function, given the current score and the total deposit
         uint256 accumulatedRewards = evaluateScore(task.payoutRate, score);
-        uint256 pendingReward = accumulatedRewards - lastPayout[taskId][task.promoter]; // also ensures that accumulatedRewards >= last
+        uint256 pendingReward = accumulatedRewards - totalPayout[taskId][task.promoter]; // also ensures that accumulatedRewards >= last
 
         // console.log('pendingReward', pendingReward);
         // shouldn't be required (except for public case)
@@ -182,10 +206,10 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         task.balance -= pendingReward;
 
         // task.status = Status.FULFILLED;
-        lastPayout[taskId][task.promoter] = accumulatedRewards;
+        totalPayout[taskId][task.promoter] = accumulatedRewards;
 
-        uint256 platformFee = (task.depositAmount * baseFeePerMille) / 1000;
-        uint256 reward = task.depositAmount - platformFee;
+        uint256 platformFee = (pendingReward * baseFeePerMille) / 1000;
+        uint256 reward = pendingReward - platformFee;
 
         treasury[task.erc20Token] += platformFee;
 
@@ -194,15 +218,6 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
     }
 
     // ====================== Misc ========================
-
-    function setFee(uint256 feePerMille) external onlyOwner {
-        require(feePerMille <= 50, 'fee cannot be larger than 5%');
-        baseFeePerMille = feePerMille;
-    }
-
-    function setTokenWhitelisted(address token, bool allowed) external onlyOwner {
-        tokenWhitelist[token] = allowed;
-    }
 
     function withdrawToken(address token) external onlyOwner {
         bool transferSuccessful = IERC20(token).transfer(owner(), treasury[token]);
@@ -215,14 +230,14 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
     }
 
     function evaluateScore(ScoreFnData memory self, uint256 x) public pure returns (uint256) {
-        // requires: x[-1] == SCORE_MAX_VALUE
-        if (x == SCORE_MAX_VALUE) return self.y[self.y.length - 1];
+        // requires: x[-1] == MAX_SCORE
+        if (x == MAX_SCORE) return self.y[self.y.length - 1];
 
-        // follows: x < SCORE_MAX_VALUE
+        // follows: x < MAX_SCORE
 
         uint256 i;
         // requires: x[i] < x[i+1]
-        // requires: x[-1] == SCORE_MAX_VALUE
+        // requires: x[-1] == MAX_SCORE
         while (self.x[i] < x) i++;
         // follows:  i <= x.length
 
@@ -236,28 +251,22 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         uint256 x0 = (i == 0) ? 0 : self.x[i - 1]; // implicit 0 added
         uint256 x1 = self.x[i];
 
-        uint256 denominator = (x1 - x0) >> 192;
-        if (denominator == 0) return y0; // happens when ticks are too close
-
-        // requires: y1 <~= 2^192  // should overflow otherwise
-        // calculate in lower precision to avoid overflow
-        return y0 + ((y1 * ((x - x0) >> 192)) / denominator);
+        return y0 + (y1 * (x - x0)) / (x1 - x0);
     }
 
-    // function testScores(uint256 taskId) public view returns (uint256[] memory) {
-    //     ScoreFnData memory self = tasks[taskId].payoutRate;
+    function testScores(uint256 taskId) public view returns (uint256[] memory) {
+        ScoreFnData memory self = tasks[taskId].payoutRate;
 
-    //     uint256 num = 16;
-    //     uint256[] memory res = new uint256[](num + 1);
-    //     for (uint256 i; i <= num; i++) {
-    //         // res[i] = evaluateScore(self, uint64((i * type(uint64).max) / num), tasks[taskId].depositAmount);
-    //         console.log('it', i);
-    //         uint256 resi = evaluateScore(self, (i * (type(uint256).max / num)));
-    //         console.log('res', resi);
-    //         res[i] = resi;
-    //     }
-    //     return res;
-    // }
+        uint256 num = MAX_SCORE;
+        uint256[] memory res = new uint256[](num + 1);
+        for (uint256 i; i <= num; i++) {
+            // console.log('it', i);
+            uint256 resi = evaluateScore(self, i);
+            // console.log('res', resi);
+            res[i] = resi;
+        }
+        return res;
+    }
 
     // function evaluateScores(
     //     ScoreFnData memory self,
@@ -283,19 +292,40 @@ contract TruPr is EscrowBase {
     function fulfillTask(uint256 taskId) external {
         Task storage task = tasks[taskId];
 
-        require(task.promoter == msg.sender, 'caller is not the promoter');
         require(task.status == Status.OPEN, 'task is not open');
+        require(task.promoter == msg.sender, 'caller is not the promoter');
         require(
-            task.timeWindowStart <= block.timestamp && block.timestamp < task.timeWindowEnd,
-            'not in valid time window'
+            task.timeWindowStart <= block.timestamp && block.timestamp <= task.timeWindowEnd,
+            'must be in valid time window'
         );
 
-        verifyTask(
+        _verifyTask(
             taskId,
             task.timeWindowStart,
             task.timeWindowEnd,
             task.vestingTerm,
             task.data,
+            this.fulfillTaskCallback.selector
+        );
+    }
+
+    function fulfillTaskPublic(uint256 taskId, string memory authentication) external {
+        Task storage task = tasks[taskId];
+
+        require(task.status == Status.OPEN, 'task is not open');
+        require(task.promoter == address(0), 'task is not public');
+        require(
+            task.timeWindowStart <= block.timestamp && block.timestamp <= task.timeWindowEnd,
+            'must be in valid time window'
+        );
+
+        _verifyTaskPublic(
+            taskId,
+            task.timeWindowStart,
+            task.timeWindowEnd,
+            task.vestingTerm,
+            task.data,
+            authentication,
             this.fulfillTaskCallback.selector
         );
     }
@@ -309,15 +339,16 @@ contract TruPr is EscrowBase {
         require(task.status == Status.OPEN, 'task is not open');
         require(msg.sender == task.sponsor || msg.sender == task.promoter, 'caller must be sponsor or promoter');
 
-        // promoter is allowed to cancel any time; XXX: is this a good check?
+        // promoter is allowed to cancel any time
+        // sponsor must wait for a buffered time without chainlink verification
         if (msg.sender == task.sponsor) {
             require(
-                block.timestamp < task.timeWindowStart || task.timeWindowEnd + task.vestingTerm < block.timestamp,
-                'must be before or after valid time window plus vesting term'
+                block.timestamp < task.timeWindowStart ||
+                    task.timeWindowEnd + task.vestingTerm + PendingRevokeDelay < block.timestamp,
+                'must be in valid cancellation period'
             );
         }
 
-        // NOTE: could calculate pending rewards to be paid out to promoter
         uint256 remainingBalance = task.balance;
         task.balance = 0;
         task.status = Status.CLOSED;
@@ -327,16 +358,31 @@ contract TruPr is EscrowBase {
         require(transferSuccessful, 'ERC20 Token could not be transferred');
     }
 
-    // this function can be called by the sponsor inside the timeframe
+    function requestRevokeTask(uint256 taskId) external {
+        Task memory task = tasks[taskId];
+
+        require(task.sponsor == msg.sender, 'caller is not the sponsor');
+        require(task.status == Status.OPEN, 'task is not open');
+        require(pendingRevoke[taskId] == 0, 'revoke already pending');
+
+        pendingRevoke[taskId] = block.timestamp;
+        // task.status = Status.PENDING_REVOKE;
+    }
+
+    // this function can be called by the sponsor inside the time frame
     // calls the chainlink api and requires a score of 0 (post deleted etc.)
     // should add time delay as a safety measure
     function revokeTask(uint256 taskId) external {
-        Task storage task = tasks[taskId];
+        Task memory task = tasks[taskId];
 
-        require(msg.sender == task.sponsor, 'caller is not the sponsor');
+        require(task.sponsor == msg.sender, 'caller is not the sponsor');
         require(task.status == Status.OPEN, 'task is not open');
+        require(0 < pendingRevoke[taskId], 'revoke must be pending');
+        require(pendingRevoke[taskId] + PendingRevokeDelay <= block.timestamp, 'must wait for revoke delay to pass');
 
-        verifyTask(
+        pendingRevoke[taskId] = 0;
+
+        _verifyTask(
             taskId,
             task.timeWindowStart,
             task.timeWindowEnd,
@@ -351,18 +397,12 @@ contract TruPr is EscrowBase {
     function fulfillTaskCallback(
         bytes32 requestId,
         uint256 taskId,
-        uint64 score,
+        uint256 score,
         ResponseStatus response
     ) external recordChainlinkFulfillment(requestId) {
         Task storage task = tasks[taskId];
 
         if (task.status == Status.OPEN && response == ResponseStatus.SUCCESS) {
-            // if (task.promoter == address(0)) {
-            //     // task is public
-            //     // TODO: chainlink node needs to be able to pass in promoter
-            //     // Risks: User could change address if stored in bio.. Could user change their twitter id?
-            // }
-
             task.status = Status.CLOSED;
             payoutPromoter(taskId, score);
         }
@@ -371,17 +411,17 @@ contract TruPr is EscrowBase {
     function revokeTaskCallback(
         bytes32 requestId,
         uint256 taskId,
-        uint64 score,
+        uint256 score,
         ResponseStatus response
     ) external recordChainlinkFulfillment(requestId) {
         Task storage task = tasks[taskId];
 
         if (task.status == Status.OPEN && response == ResponseStatus.INVALID) {
+            uint256 remainingBalance = task.balance;
+            task.balance = 0;
             task.status = Status.CLOSED;
 
-            task.balance = 0;
-
-            bool transferSuccessful = IERC20(task.erc20Token).transfer(task.sponsor, task.balance);
+            bool transferSuccessful = IERC20(task.erc20Token).transfer(task.sponsor, remainingBalance);
             require(transferSuccessful, 'ERC20 Token could not be transferred');
         }
     }
