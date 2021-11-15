@@ -18,7 +18,7 @@ async function deploy() {
   console.log('MOCKERC20 contract2 deployed to:', token2.address);
 
   let tx;
-  tx = await token1.mintFor(owner.address, '1000');
+  tx = await token1.mintFor(owner.address, '1000000');
   await tx.wait();
   tx = await token2.mintFor(promoter.address, '1000');
   await tx.wait();
@@ -31,11 +31,10 @@ async function deploy() {
   // console.log('Treasury deployed to:', treasury.address);
 
   // Escrow Platform
-  const EscrowPlatform = await ethers.getContractFactory('PersonalisedEscrow');
+  const EscrowPlatform = await ethers.getContractFactory('TruPr');
   const contract = await EscrowPlatform.deploy(
     '0xa07463D2C0bDb92Ec9C49d6ffAb59b864A48A660', // oracle
-    [token1.address, token2.address],
-    '0x000000000000000000000000000000000000dEaD' // treasury
+    [token1.address, token2.address]
     // treasury.address
   );
   await contract.deployed();
@@ -48,15 +47,30 @@ async function deploy() {
   await tx.wait();
 
   tx = await contract.createTask(
-    '0',
     promoter.address,
-    '1234',
     token1.address,
-    '100',
+    100,
     time.future10m,
     time.future50h,
-    time.delta10h,
-    '0x68656c6c6f000000000000000000000000000000000000000000000000000000'
+    time.delta10d,
+    true,
+    [100],
+    [100],
+    'test content data'
+  );
+  await tx.wait();
+
+  tx = await contract.createTask(
+    ethers.constants.AddressZero, // make it public
+    token1.address,
+    50000,
+    time.future10m,
+    time.future50h,
+    time.delta10d,
+    true,
+    [10, 40, 100],
+    [3, 5, 15],
+    'test content data'
   );
   await tx.wait();
 
@@ -66,17 +80,17 @@ async function deploy() {
   tx = await contract
     .connect(promoter)
     .createTask(
-      0,
       owner.address,
-      '28405',
       token2.address,
-      500,
-      time.future10h,
-      time.future50h,
-      time.delta10d,
-      '0x1234566c6f000000000000000000000000000000000000000000000000000000'
+      666,
+      time.future10d,
+      time.future50d,
+      time.delta1d,
+      true,
+      [100],
+      [666],
+      'test content data2'
     );
-
   await tx.wait();
 
   console.log();

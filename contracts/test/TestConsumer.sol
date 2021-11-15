@@ -29,8 +29,8 @@ contract TestChainlinkConsumer is ChainlinkClient {
         // request.addBytes('data', data);
         request.addUint('taskId', 666);
         request.add('promoterId', '1234');
-        request.addUint('timeWindowStart', block.timestamp);
-        request.addUint('timeWindowEnd', block.timestamp + 1000);
+        request.addUint('startDate', block.timestamp);
+        request.addUint('endDate', block.timestamp + 1000);
         request.addUint('duration', 88888888);
         request.add('taskHash', '0x123456999999999999999999999999999999999999999999');
 

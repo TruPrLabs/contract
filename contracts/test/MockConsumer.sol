@@ -24,8 +24,8 @@ contract MockChainlinkConsumer {
 
     function _verifyTask(
         uint256 taskId,
-        uint256 timeWindowStart,
-        uint256 timeWindowEnd,
+        uint256 startDate,
+        uint256 endDate,
         uint256 vestingTerm,
         string memory data,
         bytes4 fulfillSelector
@@ -37,8 +37,8 @@ contract MockChainlinkConsumer {
 
     function _verifyTaskPublic(
         uint256 taskId,
-        uint256 timeWindowStart,
-        uint256 timeWindowEnd,
+        uint256 startDate,
+        uint256 endDate,
         uint256 vestingTerm,
         string memory data,
         string memory authentication,
@@ -79,8 +79,8 @@ contract MockChainlinkConsumer {
 //         // request.addBytes('data', data);
 //         request.addUint('taskId', 666);
 //         request.add('promoterId', '1234');
-//         request.addUint('timeWindowStart', block.timestamp);
-//         request.addUint('timeWindowEnd', block.timestamp + 1000);
+//         request.addUint('startDate', block.timestamp);
+//         request.addUint('endDate', block.timestamp + 1000);
 //         request.addUint('duration', 88888888);
 //         request.add('taskHash', '0x1234569999999999999999999999999999999999999999999999999999999999');
 

@@ -63,13 +63,13 @@ describe('Escrow Platform', () => {
 
   it('Task fields filled out correctly', async () => {
     tx = await contract.createTask(
-      0,
       promoter.address,
       token.address,
       100,
       time.now,
       time.future1m,
       0,
+      true,
       [100],
       [100],
       'test'
@@ -92,8 +92,8 @@ describe('Escrow Platform', () => {
     expect(task.erc20Token).to.equal(token.address);
     expect(task.depositAmount).to.equal(100);
     expect(task.balance).to.equal(100);
-    expect(task.timeWindowStart).to.equal(time.now);
-    expect(task.timeWindowEnd).to.equal(time.future1m);
+    expect(task.startDate).to.equal(time.now);
+    expect(task.endDate).to.equal(time.future1m);
     expect(task.vestingTerm).to.equal(0);
     expect(task.data).to.equal('test');
   });
@@ -101,19 +101,41 @@ describe('Escrow Platform', () => {
   describe('Can only create a task if', async () => {
     it('valid time frame given', async () => {
       await expect(
-        contract.createTask(0, promoter.address, token.address, 100, time.future1m, time.now, 0, [100], [100], 'test')
+        contract.createTask(
+          promoter.address,
+          token.address,
+          100,
+          time.future1m,
+          time.now,
+          0,
+          false,
+          [100],
+          [100],
+          'test'
+        )
       ).to.be.revertedWith('invalid time frame given');
     });
 
     it('deposit amount is greater 0', async () => {
       await expect(
-        contract.createTask(0, promoter.address, token.address, 0, time.now, time.future1m, 0, [100], [0], 'test')
+        contract.createTask(promoter.address, token.address, 0, time.now, time.future1m, 0, false, [100], [0], 'test')
       ).to.be.revertedWith('depositAmount cannot be 0');
     });
 
     it('promoter is not sender', async () => {
       await expect(
-        contract.createTask(0, sponsor.address, token.address, 100, time.now, time.future1m, 0, [100], [100], 'test')
+        contract.createTask(
+          sponsor.address,
+          token.address,
+          100,
+          time.now,
+          time.future1m,
+          0,
+          false,
+          [100],
+          [100],
+          'test'
+        )
       ).to.be.revertedWith('promoter cannot be sender');
     });
   });
@@ -145,13 +167,13 @@ describe('Escrow Platform', () => {
   describe('Fulfill task logic', async () => {
     beforeEach(async () => {
       tx = await contract.createTask(
-        0,
         promoter.address,
         token.address,
         100,
         time.future1m,
         time.future10m,
         0,
+        false,
         [100],
         [100],
         'test'

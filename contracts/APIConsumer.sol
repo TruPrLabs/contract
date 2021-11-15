@@ -28,8 +28,8 @@ contract ChainlinkConsumer is ChainlinkClient {
 
     function _verifyTask(
         uint256 taskId,
-        uint256 timeWindowStart,
-        uint256 timeWindowEnd,
+        uint256 startDate,
+        uint256 endDate,
         uint256 vestingTerm,
         string memory data,
         bytes4 fulfillSelector
@@ -37,8 +37,8 @@ contract ChainlinkConsumer is ChainlinkClient {
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), fulfillSelector);
 
         request.addUint('taskId', taskId);
-        request.addUint('timeWindowStart', timeWindowStart);
-        request.addUint('timeWindowEnd', timeWindowEnd);
+        request.addUint('startDate', startDate);
+        request.addUint('endDate', endDate);
         request.addUint('vestingTerm', vestingTerm);
         request.add('data', data);
 
@@ -47,8 +47,8 @@ contract ChainlinkConsumer is ChainlinkClient {
 
     function _verifyTaskPublic(
         uint256 taskId,
-        uint256 timeWindowStart,
-        uint256 timeWindowEnd,
+        uint256 startDate,
+        uint256 endDate,
         uint256 vestingTerm,
         string memory data,
         string memory authentication,
@@ -57,8 +57,8 @@ contract ChainlinkConsumer is ChainlinkClient {
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), fulfillSelector);
 
         request.addUint('taskId', taskId);
-        request.addUint('timeWindowStart', timeWindowStart);
-        request.addUint('timeWindowEnd', timeWindowEnd);
+        request.addUint('startDate', startDate);
+        request.addUint('endDate', endDate);
         request.addUint('vestingTerm', vestingTerm);
         request.add('authentication', authentication);
         request.add('data', data);

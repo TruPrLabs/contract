@@ -31,10 +31,10 @@ struct Task {
     address erc20Token;
     uint256 depositAmount;
     uint256 balance;
-    uint256 timeWindowStart;
-    uint256 timeWindowEnd;
+    uint256 startDate;
+    uint256 endDate;
     uint256 vestingTerm;
-    ScoreFnData payoutRate;
+    ScoreFnData vesting;
     string data;
 }
 
@@ -103,7 +103,7 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         uint256 score
     ) external view returns (uint256) {
         Task storage task = tasks[taskId];
-        uint256 accumulatedRewards = evaluateScore(task.payoutRate, score);
+        uint256 accumulatedRewards = evaluateScore(task.vesting, score);
         return accumulatedRewards - totalPayout[taskId][who];
     }
 
@@ -133,21 +133,19 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
     // ====================== Core API ========================
 
     function createTask(
-        bool linearRate,
         address promoter,
         address erc20Token,
         uint256 depositAmount,
-        uint256 timeWindowStart,
-        uint256 timeWindowEnd,
+        uint256 startDate,
+        uint256 endDate,
         uint256 vestingTerm,
+        bool linearRate,
         uint256[] memory xticks,
         uint256[] memory yticks,
         string memory data
     ) external {
         require(
-            block.timestamp < timeWindowEnd &&
-                timeWindowStart < timeWindowEnd &&
-                timeWindowEnd - timeWindowStart <= MaxTimeWindow,
+            block.timestamp < endDate && startDate < endDate && endDate - startDate <= MaxTimeWindow,
             'invalid time frame given'
         );
         require(vestingTerm <= MaxVestingTerm, 'vestingTerm cannot be longer than 28 days'); // to avoid deposit lockup
@@ -159,6 +157,9 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         require(xticks[xticks.length - 1] == MAX_SCORE, 'xticks must end at max value');
         require(yticks[yticks.length - 1] <= depositAmount, 'total payout cannot be greater than depositAmount');
 
+        // public case
+        if (promoter == address(0)) require(yticks[yticks.length - 1] <= depositAmount, 'must end with full amount');
+
         if (xticks.length > 1)
             for (uint256 i = 1; i < xticks.length; i++)
                 require(xticks[i - 1] < xticks[i] && yticks[i - 1] < yticks[i], 'ticks must be increasing');
@@ -168,7 +169,7 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
 
         uint256 taskId = taskCount++;
 
-        ScoreFnData memory payoutRate = ScoreFnData(linearRate, xticks, yticks);
+        ScoreFnData memory vesting = ScoreFnData(linearRate, xticks, yticks);
 
         tasks[taskId] = Task({
             status: Status.OPEN,
@@ -177,10 +178,10 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
             erc20Token: erc20Token,
             depositAmount: depositAmount,
             balance: depositAmount,
-            timeWindowStart: timeWindowStart,
-            timeWindowEnd: timeWindowEnd,
+            startDate: startDate,
+            endDate: endDate,
             vestingTerm: vestingTerm,
-            payoutRate: payoutRate,
+            vesting: vesting,
             data: data
         });
 
@@ -197,7 +198,7 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
 
         // console.log('task.balance', task.balance);
         // evaluate the piecewise-linear / constant payout function, given the current score and the total deposit
-        uint256 accumulatedRewards = evaluateScore(task.payoutRate, score);
+        uint256 accumulatedRewards = evaluateScore(task.vesting, score);
         uint256 pendingReward = accumulatedRewards - totalPayout[taskId][task.promoter]; // also ensures that accumulatedRewards >= last
 
         // console.log('pendingReward', pendingReward);
@@ -254,19 +255,19 @@ contract EscrowBase is IEscrow, ChainlinkConsumer, Ownable {
         return y0 + (y1 * (x - x0)) / (x1 - x0);
     }
 
-    function testScores(uint256 taskId) public view returns (uint256[] memory) {
-        ScoreFnData memory self = tasks[taskId].payoutRate;
+    // function testScores(uint256 taskId) public view returns (uint256[] memory) {
+    //     ScoreFnData memory self = tasks[taskId].vesting;
 
-        uint256 num = MAX_SCORE;
-        uint256[] memory res = new uint256[](num + 1);
-        for (uint256 i; i <= num; i++) {
-            // console.log('it', i);
-            uint256 resi = evaluateScore(self, i);
-            // console.log('res', resi);
-            res[i] = resi;
-        }
-        return res;
-    }
+    //     uint256 num = MAX_SCORE;
+    //     uint256[] memory res = new uint256[](num + 1);
+    //     for (uint256 i; i <= num; i++) {
+    //         // console.log('it', i);
+    //         uint256 resi = evaluateScore(self, i);
+    //         // console.log('res', resi);
+    //         res[i] = resi;
+    //     }
+    //     return res;
+    // }
 
     // function evaluateScores(
     //     ScoreFnData memory self,
@@ -294,15 +295,12 @@ contract TruPr is EscrowBase {
 
         require(task.status == Status.OPEN, 'task is not open');
         require(task.promoter == msg.sender, 'caller is not the promoter');
-        require(
-            task.timeWindowStart <= block.timestamp && block.timestamp <= task.timeWindowEnd,
-            'must be in valid time window'
-        );
+        require(task.startDate <= block.timestamp && block.timestamp <= task.endDate, 'must be in valid time window');
 
         _verifyTask(
             taskId,
-            task.timeWindowStart,
-            task.timeWindowEnd,
+            task.startDate,
+            task.endDate,
             task.vestingTerm,
             task.data,
             this.fulfillTaskCallback.selector
@@ -314,15 +312,12 @@ contract TruPr is EscrowBase {
 
         require(task.status == Status.OPEN, 'task is not open');
         require(task.promoter == address(0), 'task is not public');
-        require(
-            task.timeWindowStart <= block.timestamp && block.timestamp <= task.timeWindowEnd,
-            'must be in valid time window'
-        );
+        require(task.startDate <= block.timestamp && block.timestamp <= task.endDate, 'must be in valid time window');
 
         _verifyTaskPublic(
             taskId,
-            task.timeWindowStart,
-            task.timeWindowEnd,
+            task.startDate,
+            task.endDate,
             task.vestingTerm,
             task.data,
             authentication,
@@ -343,8 +338,8 @@ contract TruPr is EscrowBase {
         // sponsor must wait for a buffered time without chainlink verification
         if (msg.sender == task.sponsor) {
             require(
-                block.timestamp < task.timeWindowStart ||
-                    task.timeWindowEnd + task.vestingTerm + PendingRevokeDelay < block.timestamp,
+                block.timestamp < task.startDate ||
+                    task.endDate + task.vestingTerm + PendingRevokeDelay < block.timestamp,
                 'must be in valid cancellation period'
             );
         }
@@ -384,8 +379,8 @@ contract TruPr is EscrowBase {
 
         _verifyTask(
             taskId,
-            task.timeWindowStart,
-            task.timeWindowEnd,
+            task.startDate,
+            task.endDate,
             task.vestingTerm,
             task.data,
             this.revokeTaskCallback.selector
