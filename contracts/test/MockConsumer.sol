@@ -27,7 +27,7 @@ contract MockChainlinkConsumer {
         uint256 startDate,
         uint256 endDate,
         uint256 cliff,
-        string memory data,
+        string memory taskData,
         bytes4 fulfillSelector
     ) internal {
         mockFulfill(taskId, fulfillSelector);
@@ -40,8 +40,8 @@ contract MockChainlinkConsumer {
         uint256 startDate,
         uint256 endDate,
         uint256 cliff,
-        string memory data,
-        string memory authentication,
+        string memory taskData,
+        uint256 userId,
         bytes4 fulfillSelector
     ) internal {
         mockFulfill(taskId, fulfillSelector);
