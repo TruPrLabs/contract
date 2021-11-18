@@ -47,7 +47,7 @@ async function deploy() {
   await tx.wait();
 
   const data = `{ "promoterId": "1395461422121984004","taskHash": "0x83da950bf0a928aed2c5167ac121d7d59ac9e0a0efa3f4e54ff94218ca6a6a8f", "platform": "Twitter", "metric": "like_count", "endpoint": "UserTimeline" }`;
-
+  const dataPublic = `{ "promoterId": "1395461422121984004","taskHash": "0x83da950bf0a928aed2c5167ac121d7d59ac9e0a0efa3f4e54ff94218ca6a6a8f", "platform": "Twitter", "metric": "like_count", "endpoint": "Public" }`;
   tx = await contract.createTask(
     promoter.address,
     token1.address,
@@ -66,13 +66,13 @@ async function deploy() {
     ethers.constants.AddressZero, // make it public
     token1.address,
     50000,
-    time.future10m,
+    1634218319,
     time.future50h,
     time.delta10d,
     true,
     [10, 40, 100],
     [3, 5, 15],
-    'test content data'
+    dataPublic
   );
   await tx.wait();
 

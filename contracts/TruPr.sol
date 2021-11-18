@@ -10,7 +10,7 @@ import '@openzeppelin/contracts/access/Ownable.sol';
 import './ITruPr.sol';
 
 // Note: Switch when testing
-import {ChainlinkConsumer} from './APIConsumer.sol';
+import {ChainlinkConsumer} from './ChainlinkConsumer.sol';
 // import {MockChainlinkConsumer as ChainlinkConsumer} from './test/MockConsumer.sol';
 
 enum Status {
