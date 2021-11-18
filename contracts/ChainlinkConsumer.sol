@@ -17,7 +17,7 @@ contract ChainlinkConsumer is ChainlinkClient {
     address private linkToken = 0xa36085F69e2889c224210F603D836748e7dC0088;
 
     bytes32 private jobIdPersonalized = bytes32('c1c46f2f90cb41d5b9306b469fa35ec9');
-    bytes32 private jobIdPublic = bytes32('d795c25e51534ae39a6b0f81cf32779c');
+    bytes32 private jobIdPublic = bytes32('b6ce8f13bdd14e1d92afa165e932c47c');
     bytes32 private jobIdPrivate = bytes32('e8c67225f3e14191b8e8b5ef5bd5cf45');
 
     uint256 private fee = 0.1 ether;
