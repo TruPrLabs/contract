@@ -18,9 +18,9 @@ async function deploy() {
   console.log('MOCKERC20 contract2 deployed to:', token2.address);
 
   let tx;
-  tx = await token1.mintFor(owner.address, '1000000');
+  tx = await token1.mintFor(owner.address, '1000000000000000000000');
   await tx.wait();
-  tx = await token2.mintFor(promoter.address, '1000');
+  tx = await token2.mintFor(promoter.address, '1000000000000000000000');
   await tx.wait();
 
   // // Treasury
@@ -33,7 +33,7 @@ async function deploy() {
   // Escrow Platform
   const EscrowPlatform = await ethers.getContractFactory('TruPr');
   const contract = await EscrowPlatform.deploy(
-    '0xa07463D2C0bDb92Ec9C49d6ffAb59b864A48A660', // oracle
+    '0xDe2Fa809f8E0c702983C846Becd044c24B86C3EE', // oracle
     [token1.address, token2.address]
     // treasury.address
   );
@@ -46,17 +46,19 @@ async function deploy() {
   tx = await token1.approve(contract.address, ethers.constants.MaxUint256);
   await tx.wait();
 
+  const data = `{ "promoterId": "1395461422121984004","taskHash": "0x83da950bf0a928aed2c5167ac121d7d59ac9e0a0efa3f4e54ff94218ca6a6a8f", "platform": "Twitter", "metric": "like_count", "endpoint": "UserTimeline" }`;
+
   tx = await contract.createTask(
     promoter.address,
     token1.address,
     100,
-    time.future10m,
+    1634218319,
     time.future50h,
     time.delta10d,
     true,
     [100],
     [100],
-    'test content data'
+    data
   );
   await tx.wait();
 
@@ -89,7 +91,7 @@ async function deploy() {
       true,
       [100],
       [666],
-      'test content data2'
+      'test'
     );
   await tx.wait();
 

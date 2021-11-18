@@ -16,7 +16,7 @@ contract ChainlinkConsumer is ChainlinkClient {
     address private oracle;
     address private linkToken = 0xa36085F69e2889c224210F603D836748e7dC0088;
 
-    bytes32 private jobId = bytes32('e5ce0aaf603d4aa2be36b62bb296ce96');
+    bytes32 private jobId = bytes32('e8c67225f3e14191b8e8b5ef5bd5cf45');
 
     uint256 private fee = 0.1 ether;
 

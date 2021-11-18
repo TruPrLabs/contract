@@ -31,16 +31,9 @@ module.exports = {
     ],
   },
   networks: {
-    rinkeby: {
-      url: process.env.ALCHEMY_KEY_RINKEBY,
-      accounts: [process.env.PRIVATE_KEY1, process.env.PRIVATE_KEY2],
-    },
     kovan: {
       url: process.env.ALCHEMY_KEY_KOVAN,
       accounts: [process.env.PRIVATE_KEY1, process.env.PRIVATE_KEY2],
     },
-  },
-  etherscan: {
-    apiKey: process.env.ETHERSCAN_KEY,
   },
 };

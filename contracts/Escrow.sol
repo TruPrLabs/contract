@@ -10,8 +10,8 @@ import '@openzeppelin/contracts/access/Ownable.sol';
 import './IEscrow.sol';
 
 // Note: Switch when testing
-// import {ChainlinkConsumer} from './APIConsumer.sol';
-import {MockChainlinkConsumer as ChainlinkConsumer} from './test/MockConsumer.sol';
+import {ChainlinkConsumer} from './APIConsumer.sol';
+// import {MockChainlinkConsumer as ChainlinkConsumer} from './test/MockConsumer.sol';
 
 enum Status {
     CLOSED,
