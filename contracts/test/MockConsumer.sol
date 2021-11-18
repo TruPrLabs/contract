@@ -5,7 +5,7 @@ import '@chainlink/contracts/src/v0.8/ChainlinkClient.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import 'hardhat/console.sol';
 
-import '../IEscrow.sol';
+// import '../ITruPr.sol';
 
 contract MockChainlinkConsumer {
     uint64 public score = 0;
@@ -26,8 +26,8 @@ contract MockChainlinkConsumer {
         uint256 taskId,
         uint256 startDate,
         uint256 endDate,
-        uint256 vestingTerm,
-        string memory data,
+        uint256 cliff,
+        string memory taskData,
         bytes4 fulfillSelector
     ) internal {
         mockFulfill(taskId, fulfillSelector);
@@ -39,9 +39,9 @@ contract MockChainlinkConsumer {
         uint256 taskId,
         uint256 startDate,
         uint256 endDate,
-        uint256 vestingTerm,
-        string memory data,
-        string memory authentication,
+        uint256 cliff,
+        string memory taskData,
+        uint256 userId,
         bytes4 fulfillSelector
     ) internal {
         mockFulfill(taskId, fulfillSelector);
