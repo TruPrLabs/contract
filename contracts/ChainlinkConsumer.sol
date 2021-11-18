@@ -51,7 +51,7 @@ contract ChainlinkConsumer is ChainlinkClient {
         uint256 endDate,
         uint256 cliff,
         string memory taskData,
-        string memory userData,
+        uint256 userId,
         bytes4 fulfillSelector
     ) internal {
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), fulfillSelector);
@@ -61,7 +61,7 @@ contract ChainlinkConsumer is ChainlinkClient {
         request.addUint('endDate', endDate);
         request.addUint('cliff', cliff);
         request.addUint('userAddress', uint256(uint160(msg.sender)));
-        request.add('userData', userData);
+        request.addUint('userId', userId);
         request.add('taskData', taskData);
 
         sendChainlinkRequestTo(oracle, request, fee);

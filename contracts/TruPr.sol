@@ -201,7 +201,7 @@ contract TruPr is ITruPr, ChainlinkConsumer, Ownable {
         _verifyTask(taskId, task.startDate, task.endDate, task.cliff, task.data, this.fulfillTaskCallback.selector);
     }
 
-    function fulfillTaskPublic(uint256 taskId, string memory userData) external {
+    function fulfillTaskPublic(uint256 taskId, uint256 userId) external {
         Task storage task = tasks[taskId];
 
         require(task.status == Status.OPEN, 'task is not open');
@@ -215,7 +215,7 @@ contract TruPr is ITruPr, ChainlinkConsumer, Ownable {
             task.endDate,
             task.cliff,
             task.data,
-            userData,
+            userId,
             this.fulfillTaskCallback.selector
         );
     }
