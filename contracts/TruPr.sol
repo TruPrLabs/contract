@@ -63,6 +63,8 @@ contract TruPr is ITruPr, ChainlinkConsumer, Ownable {
     mapping(uint256 => Task) public tasks;
     mapping(uint256 => mapping(address => uint256)) totalPayout;
     mapping(uint256 => uint256) public pendingRevokeTime;
+    mapping(uint256 => mapping(string => bool)) publicFulfilledTask;
+    mapping(uint256 => mapping(string => address)) publicUserIdToAddress;
 
     mapping(address => bool) public tokenWhitelist;
     mapping(address => uint256) treasury;
@@ -201,7 +203,7 @@ contract TruPr is ITruPr, ChainlinkConsumer, Ownable {
         _verifyTask(taskId, task.startDate, task.endDate, task.cliff, task.data, this.fulfillTaskCallback.selector);
     }
 
-    function fulfillTaskPublic(uint256 taskId, uint256 userId) external {
+    function fulfillTaskPublic(uint256 taskId, string memory userId) external {
         Task storage task = tasks[taskId];
 
         require(task.status == Status.OPEN, 'task is not open');
@@ -216,7 +218,7 @@ contract TruPr is ITruPr, ChainlinkConsumer, Ownable {
             task.cliff,
             task.data,
             userId,
-            this.fulfillTaskCallback.selector
+            this.fulfillTaskCallbackPublic.selector
         );
     }
 
@@ -285,12 +287,9 @@ contract TruPr is ITruPr, ChainlinkConsumer, Ownable {
         ResponseStatus response
     ) external recordChainlinkFulfillment(requestId) {
         Task storage task = tasks[taskId];
+        assert(task.promoter != address(0));
 
         if (task.status == Status.OPEN && response == ResponseStatus.SUCCESS) {
-            // task.status = Status.CLOSED;
-            assert(task.promoter != address(0)); // disregarding public promotrions for now
-            // XXX: add publicFulfillmentAddress
-
             // evaluate the piecewise-linear / constant payout function, given the current score and the total deposit
             uint256 accumulatedRewards = evaluateScore(task.vesting, score);
             uint256 pendingReward = accumulatedRewards - totalPayout[taskId][task.promoter]; // also ensures that accumulatedRewards >= last
@@ -307,6 +306,40 @@ contract TruPr is ITruPr, ChainlinkConsumer, Ownable {
             treasury[task.erc20Token] += platformFee;
 
             bool _success = IERC20(task.erc20Token).transfer(task.promoter, reward);
+            require(_success, 'ERC20 Token could not be transferred');
+        }
+    }
+
+    function fulfillTaskCallbackPublic(
+        bytes32 requestId,
+        uint256 taskId,
+        string memory userId,
+        uint256 score,
+        ResponseStatus response
+    ) external recordChainlinkFulfillment(requestId) {
+        Task storage task = tasks[taskId];
+        assert(task.promoter == address(0));
+
+        if (task.status == Status.OPEN && response == ResponseStatus.SUCCESS && !publicFulfilledTask[taskId][userId]) {
+            publicFulfilledTask[taskId][userId] = true;
+            address promoter = publicUserIdToAddress[taskId][userId];
+
+            // evaluate the piecewise-linear / constant payout function, given the current score and the total deposit
+            uint256 accumulatedRewards = evaluateScore(task.vesting, score);
+            uint256 pendingReward = accumulatedRewards - totalPayout[taskId][promoter]; // also ensures that accumulatedRewards >= last
+
+            // public case, more people can fulfill at once
+            if (pendingReward > task.balance) pendingReward = task.balance;
+            task.balance -= pendingReward;
+
+            totalPayout[taskId][promoter] = accumulatedRewards;
+
+            uint256 platformFee = (pendingReward * baseFeePerMille) / 1000;
+            uint256 reward = pendingReward - platformFee;
+
+            treasury[task.erc20Token] += platformFee;
+
+            bool _success = IERC20(task.erc20Token).transfer(promoter, reward);
             require(_success, 'ERC20 Token could not be transferred');
         }
     }
