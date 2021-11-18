@@ -94,7 +94,7 @@ describe('Escrow Platform', () => {
     expect(task.balance).to.equal(100);
     expect(task.startDate).to.equal(time.now);
     expect(task.endDate).to.equal(time.future1m);
-    expect(task.vestingTerm).to.equal(0);
+    expect(task.cliff).to.equal(0);
     expect(task.data).to.equal('test');
   });
 
