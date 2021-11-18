@@ -6,7 +6,7 @@ import '@chainlink/contracts/src/v0.8/ChainlinkClient.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import 'hardhat/console.sol';
 
-import './IEscrow.sol';
+// import './ITruPr.sol';
 
 contract ChainlinkConsumer is ChainlinkClient {
     address private owner;
@@ -30,8 +30,8 @@ contract ChainlinkConsumer is ChainlinkClient {
         uint256 taskId,
         uint256 startDate,
         uint256 endDate,
-        uint256 vestingTerm,
-        string memory data,
+        uint256 cliff,
+        string memory taskData,
         bytes4 fulfillSelector
     ) internal {
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), fulfillSelector);
@@ -39,8 +39,8 @@ contract ChainlinkConsumer is ChainlinkClient {
         request.addUint('taskId', taskId);
         request.addUint('startDate', startDate);
         request.addUint('endDate', endDate);
-        request.addUint('vestingTerm', vestingTerm);
-        request.add('data', data);
+        request.addUint('cliff', cliff);
+        request.add('taskData', taskData);
 
         sendChainlinkRequestTo(oracle, request, fee);
     }
@@ -49,9 +49,9 @@ contract ChainlinkConsumer is ChainlinkClient {
         uint256 taskId,
         uint256 startDate,
         uint256 endDate,
-        uint256 vestingTerm,
-        string memory data,
-        string memory authentication,
+        uint256 cliff,
+        string memory taskData,
+        string memory userData,
         bytes4 fulfillSelector
     ) internal {
         Chainlink.Request memory request = buildChainlinkRequest(jobId, address(this), fulfillSelector);
@@ -59,9 +59,10 @@ contract ChainlinkConsumer is ChainlinkClient {
         request.addUint('taskId', taskId);
         request.addUint('startDate', startDate);
         request.addUint('endDate', endDate);
-        request.addUint('vestingTerm', vestingTerm);
-        request.add('authentication', authentication);
-        request.add('data', data);
+        request.addUint('cliff', cliff);
+        request.addUint('userAddress', uint256(uint160(msg.sender)));
+        request.add('userData', userData);
+        request.add('taskData', taskData);
 
         sendChainlinkRequestTo(oracle, request, fee);
     }
