@@ -30,10 +30,13 @@ async function deploy() {
 
   // console.log('Treasury deployed to:', treasury.address);
 
+  // Kovan oracle 0xDe2Fa809f8E0c702983C846Becd044c24B86C3EE
+  // Fuji oracle 0xDDff1BaD37C3B1E36a0bF39CB4cB8bc1dca7f73F
+
   // Escrow Platform
   const EscrowPlatform = await ethers.getContractFactory('TruPr');
   const contract = await EscrowPlatform.deploy(
-    '0xDe2Fa809f8E0c702983C846Becd044c24B86C3EE', // oracle
+    '0xDDff1BaD37C3B1E36a0bF39CB4cB8bc1dca7f73F', //oracle fuji
     [token1.address, token2.address]
     // treasury.address
   );

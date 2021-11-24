@@ -14,10 +14,18 @@ contract ChainlinkConsumer is ChainlinkClient {
     using Chainlink for Chainlink.Request;
 
     address private oracle;
-    address private linkToken = 0xa36085F69e2889c224210F603D836748e7dC0088;
+    address private linkToken = 0x0b9d5D9136855f6FEc3c0993feE6E9CE8a297846;
+    //kovan link token: 0xa36085F69e2889c224210F603D836748e7dC0088
+    //fuji link token: 0x0b9d5D9136855f6FEc3c0993feE6E9CE8a297846
 
-    bytes32 private jobIdPersonalized = bytes32('c1c46f2f90cb41d5b9306b469fa35ec9');
-    bytes32 private jobIdPublic = bytes32('b6ce8f13bdd14e1d92afa165e932c47c');
+    // Eth Kovan jobs
+    //bytes32 private jobIdPersonalized = bytes32('c1c46f2f90cb41d5b9306b469fa35ec9');
+    //bytes32 private jobIdPublic = bytes32('b6ce8f13bdd14e1d92afa165e932c47c');
+    //bytes32 private jobIdPrivate = bytes32('e8c67225f3e14191b8e8b5ef5bd5cf45');
+
+    // Avax Fuji jobs
+    bytes32 private jobIdPersonalized = bytes32('86dedf578e3b4a459274abb64986c980');
+    bytes32 private jobIdPublic = bytes32('d4bfb986ab574ef8bbc774f69e909b3c');
     bytes32 private jobIdPrivate = bytes32('e8c67225f3e14191b8e8b5ef5bd5cf45');
 
     uint256 private fee = 0.1 ether;
@@ -25,7 +33,8 @@ contract ChainlinkConsumer is ChainlinkClient {
     constructor(address _oracle) {
         owner = msg.sender;
         oracle = _oracle;
-        setPublicChainlinkToken();
+        setChainlinkToken(linkToken);
+        //setPublicChainlinkToken();
     }
 
     function _verifyTask(

@@ -21,7 +21,7 @@ module.exports = {
           optimizer: {
             // enabled: false,
             enabled: true,
-            runs: 10000,
+            runs: 1000,
           },
         },
       },
@@ -33,6 +33,12 @@ module.exports = {
   networks: {
     kovan: {
       url: process.env.ALCHEMY_KEY_KOVAN,
+      accounts: [process.env.PRIVATE_KEY1, process.env.PRIVATE_KEY2],
+    },
+    avalanche_fuji: {
+      url: process.env.AVALANCHE_FUJI_KEY,
+      gasPrice: 225000000000,
+      chainId: 43113,
       accounts: [process.env.PRIVATE_KEY1, process.env.PRIVATE_KEY2],
     },
   },
